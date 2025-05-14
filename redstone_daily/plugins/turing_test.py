@@ -14,7 +14,7 @@ from nonebot.adapters.onebot.v11 import (
 from nonebot.plugin import on_notice, on_message
 import random
 
-from redstone_daily.plugins.utils import Group, User
+from redstone_daily.plugins.utils import Group, User, check_command_enabled
 
 # 初始化定时任务
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -180,7 +180,10 @@ async def check_timeout():
 
 
 @group_increase_handler.handle()
-async def handle_increase(event: GroupIncreaseNoticeEvent, bot: Bot):
+@on_command('test').handle()
+@check_command_enabled('turing', False)
+async def handle_increase(event: GroupIncreaseNoticeEvent):
+    bot = nonebot.get_bot()
     user_id = event.user_id
     group_id = event.group_id
     code = ''.join(random.choices('0123456789', k=3))

@@ -2,6 +2,9 @@ from nonebot.adapters.onebot.v11 import Bot
 
 from .user import User
 import nonebot
+from . import database as db
+
+group_commands_db = db.get_database('group_commands').collection
 
 
 class Group(object):
@@ -54,3 +57,33 @@ class Group(object):
 
         bot = nonebot.get_bot()  # 获取nonebot实例
         await bot.set_group_card(group_id=self.id, user_id=user.id, card=nickname)
+
+    def is_command_enabled(self, command: str) -> bool:
+        """
+        检查指令是否可用
+        :param command: 指令名称
+        :return: bool 是否可用
+        """
+        group_doc = group_commands_db.find_one({'group_id': self.id})
+        return group_doc and command in group_doc.get('allowed_commands', [])
+
+    async def add_command(self, command: str):
+        """
+        添加可用指令
+        :param command: 指令名称
+        """
+        group_commands_db.update_one(
+            {'group_id': self.id},
+            {'$addToSet': {'allowed_commands': command}},
+            upsert=True
+        )
+
+    async def remove_command(self, command: str):
+        """
+        移除可用指令
+        :param command: 指令名称
+        """
+        group_commands_db.update_one(
+            {'group_id': self.id},
+            {'$pull': {'allowed_commands': command}}
+        )

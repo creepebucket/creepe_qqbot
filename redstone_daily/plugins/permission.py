@@ -4,16 +4,13 @@ from nonebot import on_command
 from nonebot.params import CommandArg
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Event
 
-from redstone_daily.plugins.utils import get_context, permission_required, get_all_ops, User
+from redstone_daily.plugins.utils import get_context, permission_required, get_all_ops, User, Group
 
-perm_matcher = on_command(
-    'op', force_whitespace=True, priority=15)
-perm_list_matcher = on_command(
-    'op list', force_whitespace=True, priority=10, block=True)
-perm_query_matcher = on_command(
-    'op query', force_whitespace=True, priority=10, block=True)
-perm_set_matcher = on_command(
-    'op set', force_whitespace=True, priority=10, block=True)
+perm_matcher = on_command('op')
+perm_list_matcher = on_command('op_list')
+perm_query_matcher = on_command('op_query')
+perm_set_matcher = on_command('op_set')
+perm_set_superuser = on_command('op_set_su')
 
 
 @perm_matcher.handle()
@@ -41,10 +38,10 @@ async def handle_perm_list(event: Event):
 async def handle_perm_query(event: Event):
     sender, arg, group = get_context(event)
 
-    if not arg[1].isdigit():  # 若参数不是数字
+    if not arg[0].isdigit():  # 若参数不是数字
         await perm_query_matcher.finish('用户 QQ 号格式错误，请重新填写后尝试。')
 
-    user = User(int(arg[1]))  # 实例化用户对象
+    user = User(int(arg[0]))  # 实例化用户对象
 
     await perm_query_matcher.finish(f'用户 {user.id} 的操作权限为 {user.get_permission(group)} 级。')
     await perm_query_matcher.finish('参数不能为空！')
@@ -55,7 +52,7 @@ async def handle_perm_query(event: Event):
 async def handle_perm_set(event: Event):
     sender, arg, group = get_context(event)
 
-    if len(arg) != 3:  # 若参数长度不为 2
+    if len(arg) != 2:  # 若参数长度不为 2
         await perm_set_matcher.finish('参数错误，请查看语法然后重新尝试。')
 
     user_id, permission = arg[-2:]  # 取出参数
@@ -70,4 +67,23 @@ async def handle_perm_set(event: Event):
 
     user.set_permission(permission, group)  # 设置用户权限
     await perm_set_matcher.finish(F'用户 {user.id} 的操作权限已设置为 {permission} 级。')
+
+@perm_set_superuser.handle()
+async def handle_perm_set(event: Event):
+    sender, arg, group = get_context(event)
+
+    SUPERUSERS = [3327018890]
+    if sender.id not in SUPERUSERS:
+        await perm_set_superuser.finish('你不是超级用户! 如何获取超级用户? 前往gtnewhorizons.com获取更多信息')
+
+    if len(arg) == 1:
+        sender.set_permission(int(arg[0]), group)
+        await perm_set_superuser.finish(f'已将用户{sender.id}在{group.id}的权限设置为{arg[0]}')
+    elif len(arg) == 2:
+        sender.set_permission(int(arg[0]), Group(int(arg[1])))
+        await perm_set_superuser.finish(f'已将用户{sender.id}在{arg[1]}的权限设置为{arg[0]}')
+    else:
+        User(arg[0]).set_permission(int(arg[1]), Group(int(arg[2])))
+        await perm_set_superuser.finish(f'已将用户{arg[0]}在{arg[2]}的权限设置为{arg[1]}')
+
 
