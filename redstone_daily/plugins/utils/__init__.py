@@ -45,7 +45,14 @@ def get_context(event: Event):
     else:
         group = None
 
-    user = User(event.user_id)
+    # 获取昵称
+    if isinstance(event, GroupMessageEvent):
+        nickname = event.sender.card or event.sender.nickname
+    else:
+        nickname = event.sender.nickname
+
+    user = User(event.user_id, nickname)
+
     args = get_args(event)
 
     return [user, args, group]

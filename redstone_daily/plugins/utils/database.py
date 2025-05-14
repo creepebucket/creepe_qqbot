@@ -24,8 +24,10 @@ class Database:
     def get(self, query_dict):
         # 查询数据
         query_result = self.collection.find_one(query_dict)
-        del query_result['_id']
-        return query_result
+        if query_result:
+            del query_result['_id']
+            return query_result
+        return None
 
     def get_db(self):
         # 获取集合实例

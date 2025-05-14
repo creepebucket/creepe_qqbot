@@ -1,4 +1,4 @@
-from .plugins.Config import config
+from .plugins.config import config
 
 from nonebot.adapters.onebot.v11 import Message, Bot
 

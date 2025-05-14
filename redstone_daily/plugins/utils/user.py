@@ -9,10 +9,13 @@ subscribers = db.get_database('subscribers').collection
 
 
 class User:
-    def __init__(self, id: int):
-        if type(id) != int:  # 确保QQ号为整数
-            raise TypeError('QQ号必须为整数')
+    def __init__(self, id: int, nickname: str = ""):
         self.id = id
+        self._nickname = nickname
+
+    @property
+    def name(self) -> str:
+        return self._nickname
 
     @property
     def permission(self) -> int:
@@ -46,30 +49,6 @@ class User:
 
         permissions.update_one({'id': self.id, 'group': group.id}, {'$set': {'permission': permission}}, upsert=True)
 
-    def is_subscriber(self) -> bool:
-        """
-        获取用户订阅状态
-        :return: 订阅状态
-        """
-
-        sub = subscribers.find({'id': self.id})
-
-        for i in sub:  # 遍历订阅表，找到用户的订阅状态
-            return i['sub']
-
-        return False  # 未订阅
-
-    def set_subscribe(self, sub: bool):
-        """
-        设置用户订阅状态
-        :param sub: 订阅状态
-        """
-
-        if type(sub) != bool:  # 确保订阅状态为布尔值
-            raise TypeError('订阅状态必须为布尔值')
-
-        subscribers.update_one({'id': self.id}, {'$set': {'sub': sub}}, upsert=True)
-
     async def send(self, msg: MessageSegment):
         """
          发送私聊消息
@@ -77,11 +56,3 @@ class User:
          """
 
         await nonebot.get_bot().send_private_msg(user_id=self.id, message=msg)
-
-    @property
-    def name(self) -> str:
-        """
-        获取用户昵称
-        """
-
-        return requests.get('https://api.03c3.cn/api/qqName', params={'uin': self.id}).json()['data']['nickname']
