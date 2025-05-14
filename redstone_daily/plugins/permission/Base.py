@@ -1,5 +1,4 @@
 from redstone_daily.plugins.config import config
-from redstone_daily.Data import OpreationPermissions
 
 from nonebot import on_command
 from nonebot.params import CommandArg
