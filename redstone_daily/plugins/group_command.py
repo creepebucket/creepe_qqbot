@@ -41,7 +41,7 @@ async def handle_enable_command(event: MessageEvent):
         await enable_command.finish(str(e))
 
     # 权限验证（操作者需在目标群有权限）
-    operator_permission = user.get_permission(Group(target_group))
+    operator_permission = await user.get_permission(Group(target_group))
     if operator_permission < 3:
         await enable_command.finish(f"你在群{target_group}没有操作权限")
 
@@ -69,7 +69,7 @@ async def handle_disable_command(event: MessageEvent,):
         await disable_command.finish(str(e))
 
     # 权限验证
-    operator_permission = user.get_permission(Group(target_group))
+    operator_permission = await user.get_permission(Group(target_group))
     if operator_permission < 3:
         await disable_command.finish(f"你在群{target_group}没有操作权限")
 

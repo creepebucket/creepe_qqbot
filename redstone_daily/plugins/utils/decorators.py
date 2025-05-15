@@ -60,7 +60,7 @@ def permission_required(perm: int):
     def decorator(func):
         async def wrapper(event: Event):
             sender, arg, group = get_context(event)
-            if sender.get_permission(group) >= perm:  # 判断用户权限是否满足要求
+            if await sender.get_permission(group) >= perm:  # 判断用户权限是否满足要求
                 return await func(event)  # 执行函数
             else:  # 权限不足
                 bot = nonebot.get_bot()

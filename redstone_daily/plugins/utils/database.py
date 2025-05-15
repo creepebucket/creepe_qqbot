@@ -2,6 +2,7 @@ import pymongo
 import nonebot
 from copy import deepcopy
 from nonebot.plugin import *
+
 # 获取配置文件
 config = nonebot.get_driver().config
 
@@ -47,6 +48,7 @@ class Database:
             raise ValueError('错误：请先初始化数据库集合')
 
         return getattr(self.collection, name)
+
 
 # 导出数据库
 def get_database(collection_name):

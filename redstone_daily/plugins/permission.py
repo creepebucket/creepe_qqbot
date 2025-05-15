@@ -17,7 +17,7 @@ perm_set_superuser = on_command('op_set_su')
 async def handle_perm(event: Event):
     sender, arg, group = get_context(event)
 
-    await perm_matcher.finish(F'您当前的权限为 {sender.get_permission(group)} 级。')
+    await perm_matcher.finish(F'您当前的权限为 {await sender.get_permission(group)} 级。')
 
 
 @perm_list_matcher.handle()
@@ -43,12 +43,12 @@ async def handle_perm_query(event: Event):
 
     user = User(int(arg[0]))  # 实例化用户对象
 
-    await perm_query_matcher.finish(f'用户 {user.id} 的操作权限为 {user.get_permission(group)} 级。')
+    await perm_query_matcher.finish(f'用户 {user.id} 的操作权限为 {await user.get_permission(group)} 级。')
     await perm_query_matcher.finish('参数不能为空！')
 
 
 @perm_set_matcher.handle()
-@permission_required(10)
+@permission_required(5)
 async def handle_perm_set(event: Event):
     sender, arg, group = get_context(event)
 
@@ -62,8 +62,8 @@ async def handle_perm_set(event: Event):
     permission = int(permission)
     user = User(int(user_id))  # 实例化用户对象
 
-    if not 1 <= permission <= 10:  # 若权限等级不在 1 到 10 之间
-        await perm_set_matcher.finish('权限等级只能在 1 到 10 之间。')
+    if not 1 <= permission <= 5:  # 若权限等级不在 1 到 5 之间
+        await perm_set_matcher.finish('权限等级只能在 1 到 5 之间。')
 
     user.set_permission(permission, group)  # 设置用户权限
     await perm_set_matcher.finish(F'用户 {user.id} 的操作权限已设置为 {permission} 级。')

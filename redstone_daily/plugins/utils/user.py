@@ -1,4 +1,6 @@
-import requests
+import asyncio
+
+from nonebot import Bot
 from nonebot.adapters.onebot.v11 import MessageSegment
 from . import database as db
 import nonebot, nonebot.adapters.onebot.v11
@@ -18,24 +20,52 @@ class User:
         return self._nickname
 
     @property
-    def permission(self) -> int:
+    async def permission(self) -> int:
         """
         获取用户权限
         """
-        return self.get_permission()
+        return await self.get_permission()
 
-    def get_permission(self, group) -> int:
+    async def get_permission(self, group) -> int:
         """
-        获取用户权限
-        :param group: 群号
+        获取用户权限（同步安全版）
+        :param group: 群对象
         """
+        # 先查询数据库
+        permission_doc = permissions.find_one({'id': self.id, 'group': group.id})
 
-        permission_doc = permissions.find_one({'id': self.id, 'group': group.id})  # 获取用户权限
+        if permission_doc is not None:
+            return permission_doc['permission']
 
-        if permission_doc is None:  # 如果用户没有权限，则默认为0
+        # 如果数据库无记录，进行群角色检测
+        bot: Bot = nonebot.get_bot()
+
+        try:
+            member_info = await bot.get_group_member_info(
+                    group_id=group.id,
+                    user_id=self.id
+                )
+        except (TimeoutError, asyncio.TimeoutError):
+            # 处理超时情况
+            return 0
+        except Exception as e:
+            # 处理其他异常
+            print(f"获取成员信息失败: {str(e)}")
             return 0
 
-        return permission_doc['permission']  # 返回用户权限
+        role = member_info.get("role", "member")
+
+        # 根据角色设置权限
+        if role == "owner":
+            permission = 5
+        elif role == "admin":
+            permission = 3
+        else:
+            permission = 0
+
+        # 将权限保存到数据库
+        self.set_permission(permission, group)
+        return permission
 
     def set_permission(self, permission: int, group):
         """
