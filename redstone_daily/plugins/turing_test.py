@@ -180,7 +180,7 @@ async def check_timeout():
 
 
 @group_increase_handler.handle()
-@on_command('test').handle()
+# @on_command('test').handle()
 @check_command_enabled('turing', False)
 async def handle_increase(event: GroupIncreaseNoticeEvent):
     bot = nonebot.get_bot()
