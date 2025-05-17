@@ -84,10 +84,7 @@ async def handle_disable_command(event: MessageEvent,):
 
 # 预设指令分类（可扩展）
 COMMAND_PRESETS: Dict[str, List[str]] = {
-    "娱乐": ["sing", "joke", "game", "music"],
-    "管理": ["ban", "kick", "mute", "warn"],
-    "工具": ["weather", "translate", "calc"],
-    "全部": []  # 特殊分类，表示所有指令
+    # 示例: "娱乐": ["sing", "joke", "game", "music"],
 }
 
 preset_command = on_command("preset_command", aliases={"预设指令"})

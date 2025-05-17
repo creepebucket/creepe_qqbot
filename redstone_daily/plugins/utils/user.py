@@ -84,5 +84,4 @@ class User:
          发送私聊消息
          :param msg: 要发送的消息
          """
-
         await nonebot.get_bot().send_private_msg(user_id=self.id, message=msg)
