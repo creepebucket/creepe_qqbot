@@ -86,7 +86,8 @@ async def handle_disable_command(event: MessageEvent,):
 COMMAND_PRESETS: Dict[str, List[str]] = {
     # 示例: '娱乐': ['sing', 'joke', 'game', 'music'],
     '娱乐': ['fish'],
-    '可能打扰聊天的功能': ['keyword']
+    '可能打扰聊天的功能': ['keyword'],
+    '验证码': ['turing']
 }
 
 preset_command = on_command('preset_command', aliases={'预设指令'})
