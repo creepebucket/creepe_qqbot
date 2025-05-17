@@ -4,7 +4,7 @@ from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageEvent, GroupMessageEvent, MessageSegment
 
 from redstone_daily.plugins.helper import add_info
-from redstone_daily.plugins.utils import permission_required, get_context, Group
+from redstone_daily.plugins.utils import permission_required, get_context, Group, User
 
 enable_command = on_command("enable_command", aliases={"启用指令"})
 add_info('enable_command', '在群里启用某指令\n需求权限3 参数:\n/enable_command <command> [groupid]')
@@ -12,7 +12,7 @@ disable_command = on_command("disable_command", aliases={"禁用指令"})
 add_info('disable_command', '在群里禁用某指令\n需求权限3 参数:\n/enable_command <command> [groupid]')
 
 
-def _validate_group_id(event: MessageEvent, input_group: str = None) -> int:
+def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:
     """验证并获取目标群号"""
     # 优先使用输入参数
     if input_group and input_group.isdigit():
@@ -44,7 +44,7 @@ async def handle_enable_command(event: MessageEvent):
         await enable_command.finish(str(e))
 
     # 权限验证（操作者需在目标群有权限）
-    operator_permission = await user.get_permission(Group(target_group))
+    operator_permission = await User_permission(Group(target_group))
     if operator_permission < 3:
         await enable_command.finish(f"你在群{target_group}没有操作权限")
 
@@ -72,7 +72,7 @@ async def handle_disable_command(event: MessageEvent,):
         await disable_command.finish(str(e))
 
     # 权限验证
-    operator_permission = await user.get_permission(Group(target_group))
+    operator_permission = await User_permission(Group(target_group))
     if operator_permission < 3:
         await disable_command.finish(f"你在群{target_group}没有操作权限")
 
@@ -120,7 +120,7 @@ async def handle_preset_command(event: MessageEvent):
         await preset_command.finish(str(e))
 
     # 权限验证
-    operator_permission = await user.get_permission(Group(target_group))
+    operator_permission = await User_permission(Group(target_group))
     if operator_permission < 3:
         await preset_command.finish(f"你在群 {target_group} 没有操作权限")
 
@@ -185,3 +185,119 @@ async def handle_list_presets(event: MessageEvent):
     message += MessageSegment.text("\n\n使用示例：\n/预设指令 enable 娱乐\n/预设指令 disable 管理 123456")
 
     await list_presets.finish(message)
+
+# 新增群管理指令
+mute = on_command("mute", aliases={"禁言"})
+add_info('mute', '禁言群成员\n需求权限2 参数:\n/mute @用户 <分钟> [理由]')
+unmute = on_command("unmute", aliases={"解禁"})
+add_info('unmute', '解除禁言\n需求权限2 参数:\n/unmute @用户')
+set_nick = on_command("set_nick", aliases={"更改昵称"})
+add_info('set_nick', '修改群成员昵称\n需求权限1 参数:\n/set_nick @用户 <新昵称>')
+kick = on_command("kick", aliases={"踢人"})
+add_info('kick', '踢出群成员\n需求权限4 参数:\n/kick @用户 [理由]')
+block = on_command("block", aliases={"拉黑"})
+add_info('block', '拉黑用户\n需求权限5 参数:\n/block @用户 [理由]')
+
+@mute.handle()
+@permission_required(2)
+async def handle_mute(event: GroupMessageEvent):
+    user, cmd_args, group = get_context(event)
+    
+    if len(cmd_args) < 1:
+        await mute.finish("参数格式：/mute @用户 分钟 [理由]")
+    
+    try:
+        target_id = int(cmd_args[0])
+        minutes = int(cmd_args[1])
+        reason = " ".join(cmd_args[2:]) if len(cmd_args) > 2 else None
+        target_user = User(target_id)
+        
+        await group.mute(target_user, minutes*60)
+        msg = f"已禁言用户 {target_id} {minutes}分钟"
+        if reason:
+            msg += f"，理由：{reason}"
+        await mute.send(msg)
+    except Exception as e:
+        await mute.send(f"禁言失败：{str(e)}")
+        raise e
+
+@unmute.handle()
+@permission_required(2)
+async def handle_unmute(event: GroupMessageEvent):
+    user, cmd_args, group = get_context(event)
+    
+    if not cmd_args:
+        await unmute.finish("参数格式：/unmute @用户")
+    
+    try:
+        target_id = int(cmd_args[0])
+        target_user = User(target_id)
+        
+        await group.unmute(target_user)
+        await unmute.send(f"已解除用户 {target_id} 的禁言")
+    except Exception as e:
+        await unmute.send(f"解禁失败：{str(e)}")
+        raise e
+
+@set_nick.handle()
+@permission_required(1)
+async def handle_set_nick(event: GroupMessageEvent):
+    user, cmd_args, group = get_context(event)
+    
+    if len(cmd_args) < 2:
+        await set_nick.finish("参数格式：/set_nick @用户 新昵称")
+    
+    try:
+        target_id = int(cmd_args[0])
+        new_nick = " ".join(cmd_args[1:])
+        target_user = User(target_id)
+        
+        await group.set_nickname(target_user, new_nick)
+        await set_nick.send(f"已修改用户 {target_id} 的群昵称为：{new_nick}")
+    except Exception as e:
+        await set_nick.send(f"修改昵称失败：{str(e)}")
+        raise e
+
+@kick.handle()
+@permission_required(4)
+async def handle_kick(event: GroupMessageEvent):
+    user, cmd_args, group = get_context(event)
+    
+    if not cmd_args:
+        await kick.finish("参数格式：/kick @用户 [理由]")
+    
+    try:
+        target_id = int(cmd_args[0])
+        reason = " ".join(cmd_args[1:]) if len(cmd_args) > 1 else None
+        target_user = User(target_id)
+        
+        await group.kick(target_user)
+        msg = f"已踢出用户 {target_id}"
+        if reason:
+            msg += f"，理由：{reason}"
+        await kick.send(msg)
+    except Exception as e:
+        await kick.send(f"踢出失败：{str(e)}")
+        raise e
+
+@block.handle()
+@permission_required(5)
+async def handle_block(event: GroupMessageEvent):
+    user, cmd_args, group = get_context(event)
+    
+    if not cmd_args:
+        await block.finish("参数格式：/block @用户 [理由]")
+    
+    try:
+        target_id = int(cmd_args[0])
+        reason = " ".join(cmd_args[1:]) if len(cmd_args) > 1 else None
+        target_user = User(target_id)
+        
+        await group.ban(target_user)
+        msg = f"已拉黑用户 {target_id}"
+        if reason:
+            msg += f"，理由：{reason}"
+        await block.send(msg)
+    except Exception as e:
+        await block.send(f"拉黑失败：{str(e)}")
+        raise e
