@@ -4,13 +4,20 @@ from nonebot import on_command
 from nonebot.params import CommandArg
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Event
 
+from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import get_context, permission_required, get_all_ops, User, Group
 
 perm_matcher = on_command('op')
+add_info('op', '获取自己的权限\n群主默认权限5, 管理员默认权限3')
 perm_list_matcher = on_command('op_list')
+add_info('op_list', '获取当前群数据库中所有人权限\n需求1级权限')
 perm_query_matcher = on_command('op_query')
+add_info('op_query', '获取自己的权限')
 perm_set_matcher = on_command('op_set')
+add_info('op_set', '设置某人的权限\n需求5级权限(群主)\n参数:/op_set <qq> <level>')
 perm_set_superuser = on_command('op_set_su')
+add_info('op_set_su', '超级用户指令: 设置某人在某群的权限\n参数: 3种形式\n/op_set_su <level>\n'
+                      '/op_set_su <level> <groupid>\n/op_set_su <qq> <level> <groupid>')
 
 
 @perm_matcher.handle()
@@ -69,7 +76,7 @@ async def handle_perm_set(event: Event):
     await perm_set_matcher.finish(F'用户 {user.id} 的操作权限已设置为 {permission} 级。')
 
 @perm_set_superuser.handle()
-async def handle_perm_set(event: Event):
+async def handle_perm_set_su(event: Event):
     sender, arg, group = get_context(event)
 
     SUPERUSERS = [3327018890]
