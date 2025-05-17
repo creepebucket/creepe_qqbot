@@ -1,7 +1,5 @@
 import pymongo
 import nonebot
-from copy import deepcopy
-from nonebot.plugin import *
 
 # 获取配置文件
 config = nonebot.get_driver().config

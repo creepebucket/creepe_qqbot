@@ -1,4 +1,3 @@
-from nonebot.adapters.onebot.v11 import Bot
 
 from .user import User
 import nonebot

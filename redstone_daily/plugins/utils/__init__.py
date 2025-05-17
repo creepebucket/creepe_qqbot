@@ -1,12 +1,7 @@
-import json
-
-from . import Group, User
 from .database import get_database
 from .decorators import *
 from .user import *
 from .group import *
-from nonebot.adapters.onebot.v11.event import GroupMessageEvent
-from nonebot.adapters.onebot.v11 import Event, GroupMessageEvent
 
 
 def get_all_ops() -> list:
