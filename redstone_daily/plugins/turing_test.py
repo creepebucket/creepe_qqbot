@@ -183,6 +183,10 @@ async def check_timeout():
 # @on_command('test').handle()
 @check_command_enabled('turing', False)
 async def handle_increase(event: GroupIncreaseNoticeEvent):
+
+    if not isinstance(event, GroupIncreaseNoticeEvent):
+        return
+
     bot = nonebot.get_bot()
     user_id = event.user_id
     group_id = event.group_id
