@@ -23,7 +23,7 @@ def get_context(event: Event):
         """
         args = []
         json_data = json.loads(event.json())
-        for msg in json_data['original_message']:  # 遍历消息列表
+        for msg in json_data.get('original_message', ''):  # 遍历消息列表
             if msg['type'] == 'text':  # 找到文本消息
                 for i in msg['data']['text'].split(' '):  # 遍历文本
 
