@@ -1,11 +1,30 @@
 import json
 
+from . import Group, User
 from .database import get_database
 from .decorators import *
 from .user import *
 from .group import *
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
-from nonebot.adapters.onebot.v11 import Event
+from nonebot.adapters.onebot.v11 import Event, GroupMessageEvent
+
+
+def get_all_ops() -> list:
+    """
+    获取所有管理
+    返回: 管理列表 格式
+    [{
+    'id': int,
+    'permission': int
+    },...]
+    """
+
+    permissions = get_database('permissions').collection.find()  # 获取所有权限\
+
+    return permissions  # 返回权限列表
+
+
+config_db = get_database('config').get_db()
 
 
 def get_context(event: Event):
@@ -45,32 +64,7 @@ def get_context(event: Event):
     else:
         group = None
 
-    # 获取昵称
-    if isinstance(event, GroupMessageEvent):
-        nickname = event.sender.card or event.sender.nickname
-    else:
-        nickname = event.sender.nickname
-
-    user = User(event.user_id, nickname)
-
+    user = User(event.user_id)
     args = get_args(event)
 
     return [user, args, group]
-
-
-def get_all_ops() -> list:
-    """
-    获取所有管理
-    返回: 管理列表 格式
-    [{
-    'id': int,
-    'permission': int
-    },...]
-    """
-
-    permissions = get_database('permissions').collection.find()  # 获取所有权限\
-
-    return permissions  # 返回权限列表
-
-
-config_db = get_database('config').get_db()
