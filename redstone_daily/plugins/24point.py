@@ -9,7 +9,7 @@ from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 
-add_info('24点游戏', '生成可解24点题目，提交答案或获取答案')
+add_info('24', '生成可解24点题目，提交答案或获取答案 参数:\n /24 [expr/答案]')
 
 game_24 = on_command("24")
 
