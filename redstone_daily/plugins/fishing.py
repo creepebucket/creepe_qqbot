@@ -65,7 +65,6 @@ fishing = on_command("钓鱼", aliases={"fish", "cast"})
 add_info('钓鱼', '模拟MC钓鱼\n参数: /钓鱼 [次数=1] (最多20次)')
 
 @fishing.handle()
-@permission_required(1)
 @check_command_enabled('fish')
 async def handle_fishing(event: MessageEvent):
     _, args, _ = get_context(event)
