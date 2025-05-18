@@ -12,6 +12,14 @@ disable_command = on_command('disable_command', aliases={'禁用指令'})
 add_info('disable_command', '在群里禁用某指令\n需求权限3 参数:\n/enable_command <command> [groupid]')
 
 
+# 预设指令分类（可扩展）
+COMMAND_PRESETS: Dict[str, List[str]] = {
+    # 示例: '娱乐': ['sing', 'joke', 'game', 'music'],
+    '娱乐': ['fish', '24'],
+    '可能打扰聊天的功能': ['keyword'],
+    '验证码': ['turing']
+}
+
 def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:
     '''验证并获取目标群号'''
     # 优先使用输入参数
@@ -81,14 +89,6 @@ async def handle_disable_command(event: MessageEvent,):
     await target_group_obj.remove_command(command)
     await disable_command.send(f'已在群 {target_group} 禁用指令 {command}')
 
-
-# 预设指令分类（可扩展）
-COMMAND_PRESETS: Dict[str, List[str]] = {
-    # 示例: '娱乐': ['sing', 'joke', 'game', 'music'],
-    '娱乐': ['fish'],
-    '可能打扰聊天的功能': ['keyword'],
-    '验证码': ['turing']
-}
 
 preset_command = on_command('preset_command', aliases={'预设指令'})
 add_info('preset_command',
