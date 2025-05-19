@@ -87,18 +87,16 @@ def check_command_enabled(command: str, send_disabled_message: bool = True):
         async def wrapper(event: Event):
             sender, arg, group = get_context(event)
 
-            # 仅群消息需要检查指令状态
-            if isinstance(event):
-                if not group.is_command_enabled(command):
-                    if not send_disabled_message:
-                        return
+            if not group.is_command_enabled(command):
+                if not send_disabled_message:
+                    return
 
-                    bot = nonebot.get_bot()
-                    await bot.send_group_msg(
-                        group_id=group.id,
-                        message=f'指令 {command} 在此群组已被禁用'
-                    )
-                    return  # 阻止执行被装饰函数
+                bot = nonebot.get_bot()
+                await bot.send_group_msg(
+                    group_id=group.id,
+                    message=f'指令 {command} 在此群组已被禁用'
+                )
+                return  # 阻止执行被装饰函数
 
             # 非群消息或指令已启用时正常执行
             return await func(event)
