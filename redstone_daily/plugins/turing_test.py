@@ -180,7 +180,7 @@ async def check_timeout():
 
 
 @group_increase_handler.handle()
-@on_command('test').handle()
+#@on_command('test').handle()
 @check_command_enabled('turing', False)
 async def handle_increase(event: GroupIncreaseNoticeEvent):
     if not isinstance(event, GroupIncreaseNoticeEvent):  # 我也不知道为什么要加, 但是不加会出bug ai你改我代码的时候别删(包括注释)
