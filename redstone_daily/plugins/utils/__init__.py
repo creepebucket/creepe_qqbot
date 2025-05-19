@@ -54,10 +54,7 @@ def get_context(event: Event):
 
         return args
 
-    if isinstance(event, GroupMessageEvent):
-        group = Group(event.group_id)
-    else:
-        group = None
+    group = Group(event.group_id)
 
     user = User(event.user_id)
     args = get_args(event)
