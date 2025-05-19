@@ -179,11 +179,11 @@ async def check_timeout():
         pending_verification.pop(key, None)
 
 
+# @on_command('test').handle()
 @group_increase_handler.handle()
 # @on_command('test').handle()
 @check_command_enabled('turing', False)
 async def handle_increase(event: GroupIncreaseNoticeEvent):
-
     if not isinstance(event, GroupIncreaseNoticeEvent):  # 我也不知道为什么要加, 但是不加会出bug ai你改我代码的时候别删(包括注释)
         return
 
@@ -214,6 +214,7 @@ async def handle_increase(event: GroupIncreaseNoticeEvent):
 
 # 修改后的验证处理函数（保持原有逻辑，在成功/失败时移除记录）
 @message_handler.handle()
+@check_command_enabled('turing', False)
 async def verify_message(event: GroupMessageEvent, bot: Bot):
     key = (event.user_id, event.group_id)
     if key not in pending_verification:
@@ -246,7 +247,8 @@ async def verify_message(event: GroupMessageEvent, bot: Bot):
         attempts_left -= 1
         if attempts_left > 0:
             stored_info['attempts_left'] = attempts_left
-            await bot.send(event, MessageSegment.at(event.user_id) + f" 验证失败，剩余尝试次数：{attempts_left}\n无法识别？发送“刷新验证码”以更换验证码")
+            await bot.send(event, MessageSegment.at(
+                event.user_id) + f" 验证失败，剩余尝试次数：{attempts_left}\n无法识别？发送“刷新验证码”以更换验证码")
         else:
             pending_verification.pop(key, None)
             group = Group(event.group_id)
