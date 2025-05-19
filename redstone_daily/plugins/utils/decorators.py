@@ -88,7 +88,7 @@ def check_command_enabled(command: str, send_disabled_message: bool = True):
             sender, arg, group = get_context(event)
 
             # 仅群消息需要检查指令状态
-            if isinstance(event, GroupMessageEvent):
+            if isinstance(event):
                 if not group.is_command_enabled(command):
                     if not send_disabled_message:
                         return
