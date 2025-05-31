@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11 import Event
 
 from redstone_daily.plugins.utils import check_command_enabled
 
-gtnh = on_keyword({'gtnh'})
+gtnh = on_keyword({'gtnh', 'GTNH'})
 
 @gtnh.handle()
 @check_command_enabled('keyword', False)

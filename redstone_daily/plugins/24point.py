@@ -149,3 +149,11 @@ def check_expression_safety(expr):
             raise ValueError("检测到非法操作符或语法")
         if isinstance(node, ast.UnaryOp) and not isinstance(node.op, (ast.USub, ast.UAdd)):
             raise ValueError("不支持的单目运算符")
+
+solve24 = on_command('solve24')
+
+@solve24.handle()
+async def solve_24_handler(event: Event):
+    sender, args, group = get_context(event)
+
+    await solve24.finish(str(solve_24(args)))
