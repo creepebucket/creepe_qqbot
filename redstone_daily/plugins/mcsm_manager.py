@@ -12,7 +12,7 @@ from redstone_daily.plugins.utils import (
     get_context, permission_required, check_command_enabled,
     get_env_str, get_env_list
 )
-from baimomcsm_api.common import *
+from baimomcsm_api import common, applications
 
 # 帮助信息
 add_info('mcsm_status', 'MCSM面板状态查看\n需要mc_server特殊权限\n用法: /mcsm_status')
@@ -82,7 +82,7 @@ async def handle_mcsm_status(event: Event):
         await mcsm_status.send('❌ MCSM配置不完整，请检查环境变量 MCSM_APIKEY 和 MCSM_DAEMON_ID')
         return
     
-    result = get_overview(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'])
+    result = common.get_overview(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'])
     
     if result.get('status') == 200:
         data = result['data']
@@ -113,15 +113,14 @@ async def handle_server_list(event: Event):
     
     message = "🖥️ 可用服务器列表:\n"
     for server_name, instance_id in SERVER_INSTANCES.items():
-        # 获取服务器状态
-        status_result = get_status(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id)
-        
-        if status_result.get('status') == 200:
-            status = status_result['data']['status']
+        try:
+            # 获取服务器状态 - get_status 直接返回状态值
+            status = applications.get_status(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+            
             status_emoji = "🟢" if status == 3 else "🔴"
             status_text = "运行中" if status == 3 else "已停止"
             message += f"{status_emoji} {server_name}: {status_text}\n"
-        else:
+        except Exception as e:
             message += f"❓ {server_name}: 状态未知\n"
     
     await server_list.send(message)
@@ -144,7 +143,7 @@ async def handle_server_info(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = get_info(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id)
+    result = applications.get_info(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
     if result.get('status') == 200:
         data = result['data']
@@ -181,7 +180,7 @@ async def handle_server_status(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = get_status(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id)
+    result = applications.get_info(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
     if result.get('status') == 200:
         data = result['data']
@@ -221,9 +220,9 @@ async def handle_server_start(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, 'start')
+    result = applications.start_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
-    if result.get('status') == 200:
+    if result:
         await server_start.send(f'✅ 服务器 {server_name} 启动指令已发送')
     else:
         await server_start.send(f'❌ 启动服务器失败')
@@ -246,9 +245,9 @@ async def handle_server_stop(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, 'stop')
+    result = applications.stop_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
-    if result.get('status') == 200:
+    if result:
         await server_stop.send(f'✅ 服务器 {server_name} 停止指令已发送')
     else:
         await server_stop.send(f'❌ 停止服务器失败')
@@ -271,9 +270,9 @@ async def handle_server_restart(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, 'restart')
+    result = applications.restart_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
-    if result.get('status') == 200:
+    if result:
         await server_restart.send(f'✅ 服务器 {server_name} 重启指令已发送')
     else:
         await server_restart.send(f'❌ 重启服务器失败')
@@ -296,9 +295,9 @@ async def handle_server_kill(event: Event):
     server_name = args[0]
     instance_id = get_instance_id(server_name)
     
-    result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, 'kill')
+    result = applications.kill_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
-    if result.get('status') == 200:
+    if result:
         await server_kill.send(f'✅ 服务器 {server_name} 强制停止指令已发送')
     else:
         await server_kill.send(f'❌ 强制停止服务器失败')
@@ -325,9 +324,9 @@ async def handle_whitelist(event: Event):
         server_name = args[1] if len(args) > 1 else 'slimefun'
         instance_id = get_instance_id(server_name)
         
-        result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, 'whitelist list')
+        result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], 'whitelist list')
         
-        if result.get('status') == 200:
+        if result:
             await whitelist.send(f'✅ 已发送白名单查询指令到服务器 {server_name}')
         else:
             await whitelist.send(f'❌ 发送指令失败')
@@ -342,9 +341,9 @@ async def handle_whitelist(event: Event):
         instance_id = get_instance_id(server_name)
         
         command = f'whitelist {action} {player_name}'
-        result = send_command(MCSM_CONFIG['url'], MCSM_CONFIG['apikey'], MCSM_CONFIG['daemon_id'], instance_id, command)
+        result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], command)
         
-        if result.get('status') == 200:
+        if result:
             action_text = '添加到' if action == 'add' else '从'
             action_text2 = '' if action == 'add' else '移除'
             await whitelist.send(f'✅ 已将玩家 {player_name} {action_text}服务器 {server_name} 的白名单{action_text2}')
