@@ -34,12 +34,18 @@ class MCWhitelistManager:
     """MC服务器白名单管理器"""
     
     def __init__(self):
-        # 使用文件管理器，设置MC服务器基础路径
-        self.file_manager = get_file_manager('/opt/minecraft')
+        # 使用文件管理器，设置MCSManager基础路径
+        self.file_manager = get_file_manager('/opt/mcsmanager')
         
         # 服务器配置映射：服务器名 -> whitelist.json文件路径
+        # 基于MCSManager的实例ID结构
         self.server_configs = {
-            'slimefun': '/opt/mcsmanager/daemon/data/InstanceData/f645c80e421f4fea8997ba6eb53644b7/whitelist.json',
+            'slimefun': 'daemon/data/InstanceData/f645c80e421f4fea8997ba6eb53644b7/whitelist.json',
+            'survival': 'daemon/data/InstanceData/survival-instance-id/whitelist.json',
+            'creative': 'daemon/data/InstanceData/creative-instance-id/whitelist.json',
+            'skyblock': 'daemon/data/InstanceData/skyblock-instance-id/whitelist.json',
+            'main': 'daemon/data/InstanceData/main-instance-id/whitelist.json',
+            'test': 'daemon/data/InstanceData/test-instance-id/whitelist.json'
         }
     
     def get_whitelist_path(self, server_name: str) -> str:
