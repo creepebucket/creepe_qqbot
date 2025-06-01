@@ -19,7 +19,7 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
     '可能打扰聊天的功能': ['keyword'],
     '验证码': ['turing'],
     'mc管理': [
-        'whitelist', 'server_command', 'players',
+        'whitelist', 'server_command', 'players', 'player_list',
         'mcsm_status', 'server_list', 'server_info', 'server_status',
         'server_start', 'server_stop', 'server_restart', 'server_kill'
     ],
