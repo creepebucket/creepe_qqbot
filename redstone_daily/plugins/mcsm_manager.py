@@ -12,7 +12,7 @@ from redstone_daily.plugins.utils import (
     get_context, permission_required, check_command_enabled,
     get_env_str, get_env_list
 )
-from baimomcsm_api import *
+from baimomcsm_api.common import *
 
 # 帮助信息
 add_info('mcsm_status', 'MCSM面板状态查看\n需要mc_server特殊权限\n用法: /mcsm_status')
@@ -48,12 +48,7 @@ def load_server_instances() -> dict:
     """从环境变量加载服务器实例配置"""
     # 默认配置
     default_instances = {
-        'slimefun': get_env_str('MCSM_SLIMEFUN_ID', 'f645c80e421f4fea8997ba6eb53644b7'),
-        'survival': get_env_str('MCSM_SURVIVAL_ID', ''),
-        'creative': get_env_str('MCSM_CREATIVE_ID', ''),
-        'skyblock': get_env_str('MCSM_SKYBLOCK_ID', ''),
-        'main': get_env_str('MCSM_MAIN_ID', ''),
-        'test': get_env_str('MCSM_TEST_ID', ''),
+        'slimefun': get_env_str('MCSM_SLIMEFUN_ID'),
     }
     
     # 过滤掉空值的实例
