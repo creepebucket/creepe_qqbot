@@ -18,7 +18,11 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
     '娱乐': ['fish', '24'],
     '可能打扰聊天的功能': ['keyword'],
     '验证码': ['turing'],
-    'mc管理': ['whitelist_add', 'whitelist_remove', 'whitelist_list'],
+    'mc管理': [
+        'whitelist', 
+        'mcsm_status', 'server_list', 'server_info', 'server_status',
+        'server_start', 'server_stop', 'server_restart', 'server_kill'
+    ],
 }
 
 def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:
