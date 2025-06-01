@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from nonebot import Bot
 from nonebot.adapters.onebot.v11 import MessageSegment
@@ -8,6 +9,7 @@ import nonebot, nonebot.adapters.onebot.v11
 # 数据库
 permissions = db.get_database('permissions').collection
 subscribers = db.get_database('subscribers').collection
+special_permissions = db.get_database('special_permissions').collection
 
 
 class User:
@@ -78,6 +80,62 @@ class User:
             raise TypeError('权限值必须为整数')
 
         permissions.update_one({'id': self.id, 'group': group.id}, {'$set': {'permission': permission}}, upsert=True)
+
+    async def has_special_permission(self, permission_name: str) -> bool:
+        """
+        检查用户是否拥有特殊权限
+        
+        Args:
+            permission_name: 特殊权限名称
+            
+        Returns:
+            bool: 是否拥有该特殊权限
+        """
+        # 查询特殊权限数据库
+        special_perm_doc = special_permissions.find_one({
+            'user_id': self.id, 
+            'permission_name': permission_name,
+            'enabled': True
+        })
+        
+        return special_perm_doc is not None
+    
+    def set_special_permission(self, permission_name: str, enabled: bool = True):
+        """
+        设置用户的特殊权限
+        
+        Args:
+            permission_name: 特殊权限名称
+            enabled: 是否启用该权限
+        """
+        if enabled:
+            # 启用特殊权限
+            special_permissions.update_one(
+                {'user_id': self.id, 'permission_name': permission_name},
+                {'$set': {'enabled': True, 'updated_at': datetime.now()}},
+                upsert=True
+            )
+        else:
+            # 禁用特殊权限
+            special_permissions.update_one(
+                {'user_id': self.id, 'permission_name': permission_name},
+                {'$set': {'enabled': False, 'updated_at': datetime.now()}},
+                upsert=True
+            )
+    
+    def get_special_permissions(self) -> list:
+        """
+        获取用户的所有特殊权限
+        
+        Returns:
+            list: 特殊权限名称列表
+        """
+        special_perms = special_permissions.find({
+            'user_id': self.id,
+            'enabled': True
+        })
+        
+        return [perm['permission_name'] for perm in special_perms]
 
     async def send(self, msg: MessageSegment):
         """

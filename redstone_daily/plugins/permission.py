@@ -19,6 +19,16 @@ perm_set_superuser = on_command('op_set_su')
 add_info('op_set_su', '超级用户指令: 设置某人在某群的权限\n参数: 3种形式\n/op_set_su <level>\n'
                       '/op_set_su <level> <groupid>\n/op_set_su <qq> <level> <groupid>')
 
+# 特殊权限管理指令
+special_perm_set = on_command('special_perm_set')
+add_info('special_perm_set', '设置特殊权限\n超级用户专用\n参数: /special_perm_set <qq> <权限名>')
+
+special_perm_remove = on_command('special_perm_remove') 
+add_info('special_perm_remove', '移除特殊权限\n超级用户专用\n参数: /special_perm_remove <qq> <权限名>')
+
+special_perm_list = on_command('special_perm_list')
+add_info('special_perm_list', '查询用户的特殊权限\n参数: /special_perm_list <qq>')
+
 
 @perm_matcher.handle()
 async def handle_perm(event: Event):
@@ -92,5 +102,87 @@ async def handle_perm_set_su(event: Event):
     else:
         User(arg[0]).set_permission(int(arg[1]), Group(int(arg[2])))
         await perm_set_superuser.finish(f'已将用户{arg[0]}在{arg[2]}的权限设置为{arg[1]}')
+
+
+@special_perm_set.handle()
+async def handle_special_perm_set(event: Event):
+    """设置特殊权限"""
+    sender, arg, group = get_context(event)
+    
+    SUPERUSERS = [3327018890]
+    if sender.id not in SUPERUSERS:
+        await special_perm_set.finish('❌ 你不是超级用户，无法执行此操作')
+        return
+    
+    if len(arg) != 2:
+        await special_perm_set.finish('❌ 参数错误\n用法: /special_perm_set <QQ号> <权限名>')
+        return
+    
+    user_id_str, permission_name = arg
+    
+    if not user_id_str.isdigit():
+        await special_perm_set.finish('❌ QQ号格式错误')
+        return
+    
+    user_id = int(user_id_str)
+    user = User(user_id)
+    
+    # 设置特殊权限
+    user.set_special_permission(permission_name, True)
+    
+    await special_perm_set.finish(f'✅ 已为用户 {user_id} 设置特殊权限「{permission_name}」')
+
+
+@special_perm_remove.handle()
+async def handle_special_perm_remove(event: Event):
+    """移除特殊权限"""
+    sender, arg, group = get_context(event)
+    
+    SUPERUSERS = [3327018890]
+    if sender.id not in SUPERUSERS:
+        await special_perm_remove.finish('❌ 你不是超级用户，无法执行此操作')
+        return
+    
+    if len(arg) != 2:
+        await special_perm_remove.finish('❌ 参数错误\n用法: /special_perm_remove <QQ号> <权限名>')
+        return
+    
+    user_id_str, permission_name = arg
+    
+    if not user_id_str.isdigit():
+        await special_perm_remove.finish('❌ QQ号格式错误')
+        return
+    
+    user_id = int(user_id_str)
+    user = User(user_id)
+    
+    # 移除特殊权限
+    user.set_special_permission(permission_name, False)
+    
+    await special_perm_remove.finish(f'✅ 已移除用户 {user_id} 的特殊权限「{permission_name}」')
+
+
+@special_perm_list.handle()
+async def handle_special_perm_list(event: Event):
+    """查询用户特殊权限"""
+    sender, arg, group = get_context(event)
+    
+    # 如果没有参数，查询自己的权限
+    if not arg:
+        user = sender
+    else:
+        if not arg[0].isdigit():
+            await special_perm_list.finish('❌ QQ号格式错误')
+            return
+        user = User(int(arg[0]))
+    
+    # 获取特殊权限列表
+    special_perms = user.get_special_permissions()
+    
+    if not special_perms:
+        await special_perm_list.finish(f'用户 {user.id} 暂无特殊权限')
+    else:
+        perms_str = '、'.join(special_perms)
+        await special_perm_list.finish(f'用户 {user.id} 的特殊权限：{perms_str}')
 
 

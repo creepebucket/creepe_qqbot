@@ -17,7 +17,8 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
     # 示例: '娱乐': ['sing', 'joke', 'game', 'music'],
     '娱乐': ['fish', '24'],
     '可能打扰聊天的功能': ['keyword'],
-    '验证码': ['turing']
+    '验证码': ['turing'],
+    'mc管理': ['whitelist_add', 'whitelist_remove', 'whitelist_list'],
 }
 
 def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:

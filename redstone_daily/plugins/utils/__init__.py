@@ -2,6 +2,7 @@ from .database import get_database
 from .decorators import *
 from .user import *
 from .group import *
+from .file_manager import get_file_manager, FileManager, FileManagerError
 
 
 def get_all_ops() -> list:
