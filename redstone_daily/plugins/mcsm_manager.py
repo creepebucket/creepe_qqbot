@@ -24,9 +24,9 @@ add_info('server_stop', '停止服务器\n需要mc_server特殊权限\n用法: /
 add_info('server_restart', '重启服务器\n需要mc_server特殊权限\n用法: /server_restart <服务器名>')
 add_info('server_kill', '强制停止服务器\n需要mc_server特殊权限\n用法: /server_kill <服务器名>')
 add_info('whitelist', 'MC白名单管理\n需要mc_server特殊权限\n用法: /whitelist <add/remove/list> [玩家名] [服务器名]')
-add_info('players', '查询所有服务器玩家信息\n无需权限\n用法: /players')
-add_info('player_list', '查询指定服务器玩家列表\n无需权限\n用法: /player_list [服务器名]')
-add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>\n预设指令: tps, mem, save, reload, time_day, time_night, weather_clear, weather_rain')
+add_info('players', '查询所有服务器概览信息\n无需权限\n用法: /players')
+add_info('player_list', '查询指定服务器在线玩家名单\n无需权限\n用法: /player_list [服务器名]')
+add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -41,19 +41,6 @@ whitelist = on_command('whitelist')
 players = on_command('players')
 player_list = on_command('player_list')
 server_command = on_command('server_command')
-
-# 预设命令配置
-PRESET_COMMANDS = {
-    'tps': 'forge tps',
-    'mem': 'forge tps',
-    'save': 'save-all',
-    'stop': 'stop',
-    'reload': 'reload',
-    'time_day': 'time set day',
-    'time_night': 'time set night',
-    'weather_clear': 'weather clear',
-    'weather_rain': 'weather rain'
-}
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
@@ -375,14 +362,14 @@ async def handle_whitelist(event: Event):
 @players.handle()
 @check_command_enabled('players')
 async def handle_players(event: Event):
-    """查询所有服务器玩家信息"""
+    """查询所有服务器概览信息"""
     user, args, group = get_context(event)
     
     if not check_mcsm_config():
         await players.send('❌ MCSM配置不完整，请检查环境变量配置')
         return
     
-    message = "👥 所有服务器玩家信息:\n"
+    message = "📊 服务器概览信息:\n"
     total_players = 0
     
     for server_name, instance_id in SERVER_INSTANCES.items():
@@ -401,116 +388,39 @@ async def handle_players(event: Event):
                 
                 message += f"\n{status_emoji} {server_name} ({status_text})\n"
                 
-                # 玩家信息
-                if status == 3:  # 只有运行中的服务器才查询玩家
-                    try:
-                        # 发送list指令查询在线玩家
-                        applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], 'list')
+                # 只显示玩家数量概览，不显示具体玩家名
+                if status == 3:  # 运行中
+                    if 'info' in data:
+                        info = data['info']
+                        current_players = info.get('currentPlayers', -1)
+                        max_players = info.get('maxPlayers', -1)
+                        version = info.get('version', 'N/A')
                         
-                        # 等待一下让指令执行
-                        import time
-                        time.sleep(1)
-                        
-                        # 获取最近的日志输出
-                        log_result = applications.get_outputlog(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
-                        
-                        if log_result:
-                            # 解析日志中的玩家列表
-                            player_names = parse_player_list_from_log(log_result)
-                            
-                            if player_names:
-                                message += f"  在线玩家 ({len(player_names)}):\n"
-                                for player in player_names:
-                                    message += f"    • {player}\n"
-                                total_players += len(player_names)
-                            else:
-                                # 如果无法从日志解析，显示基础信息
-                                if 'info' in data:
-                                    info = data['info']
-                                    current_players = info.get('currentPlayers', -1)
-                                    max_players = info.get('maxPlayers', -1)
-                                    if current_players >= 0:
-                                        message += f"  玩家数量: {current_players}/{max_players}\n"
-                                        message += f"  (具体玩家名需查看服务器控制台)\n"
-                                        total_players += current_players
-                                    else:
-                                        message += f"  无玩家信息\n"
-                                else:
-                                    message += f"  无玩家信息\n"
+                        if current_players >= 0:
+                            message += f"  玩家: {current_players}/{max_players}\n"
+                            total_players += current_players
+                            if version and version != 'N/A':
+                                message += f"  版本: {version}\n"
                         else:
-                            message += f"  无法获取日志信息\n"
-                    except Exception as e:
-                        # 如果获取玩家名失败，回退到基础信息
-                        if 'info' in data:
-                            info = data['info']
-                            current_players = info.get('currentPlayers', -1)
-                            max_players = info.get('maxPlayers', -1)
-                            version = info.get('version', 'N/A')
-                            
-                            if current_players >= 0:
-                                message += f"  玩家: {current_players}/{max_players}\n"
-                                total_players += current_players
-                                if version:
-                                    message += f"  版本: {version}\n"
-                            else:
-                                message += f"  玩家信息不可用\n"
-                        else:
-                            message += f"  无法获取玩家信息\n"
+                            message += f"  玩家信息不可用\n"
+                    else:
+                        message += f"  无玩家信息\n"
                 else:
-                    message += f"  服务器未运行，无玩家信息\n"
+                    message += f"  服务器未运行\n"
             else:
                 message += f"\n❓ {server_name}: 无法获取信息\n"
                 
         except Exception as e:
-            message += f"\n❓ {server_name}: 查询失败 ({str(e)})\n"
+            message += f"\n❓ {server_name}: 查询失败\n"
     
-    message += f"\n📊 总在线玩家数: {total_players}"
+    message += f"\n🎮 总在线玩家数: {total_players}"
+    message += f"\n\n💡 查看具体玩家名单请使用: /player_list <服务器名>"
     await players.send(message)
-
-def parse_player_list_from_log(log_text: str) -> list:
-    """从服务器日志中解析玩家列表"""
-    import re
-    
-    player_names = []
-    
-    # 尝试匹配常见的玩家列表格式
-    # 格式1: "There are X of a max of Y players online: player1, player2, player3"
-    pattern1 = r"There are \d+ of a max of \d+ players online:\s*(.+)"
-    match1 = re.search(pattern1, log_text)
-    if match1:
-        players_str = match1.group(1).strip()
-        if players_str and players_str != "":
-            player_names = [name.strip() for name in players_str.split(',') if name.strip()]
-    
-    # 格式2: "Online players (X): player1, player2, player3"
-    if not player_names:
-        pattern2 = r"Online players \(\d+\):\s*(.+)"
-        match2 = re.search(pattern2, log_text)
-        if match2:
-            players_str = match2.group(1).strip()
-            if players_str and players_str != "":
-                player_names = [name.strip() for name in players_str.split(',') if name.strip()]
-    
-    # 格式3: 如果没有找到标准格式，尝试查找玩家名模式
-    if not player_names:
-        # 查找最近的日志行中提到的玩家名
-        lines = log_text.split('\n')
-        for line in reversed(lines[-50:]):  # 只检查最近50行
-            # 寻找包含玩家名的行
-            if 'joined the game' in line or 'left the game' in line:
-                # 提取玩家名 (通常在 "] " 之后, " joined" 或 " left" 之前)
-                match = re.search(r'\] ([a-zA-Z0-9_]+) (?:joined|left)', line)
-                if match:
-                    player_name = match.group(1)
-                    if player_name not in player_names:
-                        player_names.append(player_name)
-    
-    return player_names
 
 @player_list.handle()
 @check_command_enabled('player_list')
 async def handle_player_list(event: Event):
-    """查询指定服务器玩家列表"""
+    """查询指定服务器在线玩家名单"""
     user, args, group = get_context(event)
 
     await player_list.send('正在查询, 请等候3-10秒......')
@@ -518,7 +428,7 @@ async def handle_player_list(event: Event):
     if not check_mcsm_config():
         await player_list.send('❌ MCSM配置不完整，请检查环境变量配置')
         return
-    
+
     # 如果没有指定服务器，默认使用第一个服务器或提示用户选择
     if not args:
         if len(SERVER_INSTANCES) == 1:
@@ -529,68 +439,155 @@ async def handle_player_list(event: Event):
             return
     else:
         server_name = args[0]
-    
+
     try:
         instance_id = get_instance_id(server_name)
     except ValueError as e:
         await player_list.send(f'❌ {str(e)}')
         return
-    
+
     try:
         # 获取服务器状态
         result = applications.get_info(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
-        
+
         if result.get('status') == 200:
             data = result['data']
             status = data['status']
-            
+
             if status != 3:
                 status_map = {0: "停止", 1: "停止中", 2: "启动中", 3: "运行中"}
                 status_text = status_map.get(status, "未知")
                 await player_list.send(f'❌ 服务器 {server_name} 当前状态: {status_text}，无法查询玩家列表')
                 return
+
+            # 多次尝试获取最新的玩家列表
+            player_names = []
+            max_attempts = 3
             
-            # 发送list指令
-            applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], 'list')
-            
-            # 等待指令执行
-            import time
-            time.sleep(2)  # 稍微等久一点确保指令执行完成
-            
-            # 获取日志
-            log_result = applications.get_outputlog(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
-            
-            if log_result:
-                player_names = parse_player_list_from_log(log_result)
+            for attempt in range(max_attempts):
+                # 发送list指令
+                applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], 'list')
                 
+                # 等待指令执行
+                import time
+                time.sleep(2 + attempt)  # 每次尝试等待更久一点
+                
+                # 获取日志
+                log_result = applications.get_outputlog(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+                
+                if log_result:
+                    # 解析最新的玩家列表
+                    parsed_players = parse_latest_player_list(log_result)
+                    
+                    # 如果成功解析到玩家列表（包括空列表），就使用这个结果
+                    if parsed_players is not None:
+                        player_names = parsed_players
+                        break
+                
+                # 如果不是最后一次尝试，短暂等待后重试
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+
+            # 显示结果
+            if player_names is not None:  # 成功获取到列表（可能为空）
                 if player_names:
                     message = f"🎮 服务器 {server_name} 在线玩家列表:\n\n"
                     for i, player in enumerate(player_names, 1):
                         message += f"{i}. {player}\n"
                     message += f"\n📊 总计: {len(player_names)} 位玩家在线"
                 else:
-                    # 如果无法解析玩家名，显示基础信息
-                    if 'info' in data:
-                        info = data['info']
-                        current_players = info.get('currentPlayers', -1)
-                        max_players = info.get('maxPlayers', -1)
-                        if current_players >= 0:
-                            message = f"🎮 服务器 {server_name}:\n"
-                            message += f"在线玩家: {current_players}/{max_players}\n"
-                            message += f"具体玩家名无法获取，请查看服务器控制台或稍后重试"
-                        else:
-                            message = f"🎮 服务器 {server_name}:\n无法获取玩家信息"
+                    message = f"🎮 服务器 {server_name}:\n当前没有玩家在线"
+            else:
+                # 如果无法解析玩家名，显示基础信息
+                if 'info' in data:
+                    info = data['info']
+                    current_players = info.get('currentPlayers', -1)
+                    max_players = info.get('maxPlayers', -1)
+                    if current_players >= 0:
+                        message = f"🎮 服务器 {server_name}:\n"
+                        message += f"在线玩家: {current_players}/{max_players}\n"
+                        message += f"具体玩家名无法获取，请稍后重试或查看服务器控制台"
                     else:
                         message = f"🎮 服务器 {server_name}:\n无法获取玩家信息"
-                
-                await player_list.send(message)
-            else:
-                await player_list.send(f'❌ 无法获取服务器 {server_name} 的日志信息')
+                else:
+                    message = f"🎮 服务器 {server_name}:\n无法获取玩家信息"
+
+            await player_list.send(message)
         else:
             await player_list.send(f'❌ 无法连接到服务器 {server_name}')
-            
+
     except Exception as e:
         await player_list.send(f'❌ 查询服务器 {server_name} 玩家列表时出错: {str(e)}')
+
+def parse_latest_player_list(log_text: str) -> list:
+    """解析最新的玩家列表 - 改进版本，确保获取最新的list命令结果"""
+    import re
+    from datetime import datetime
+    
+    lines = log_text.split('\n')
+    
+    # 从最后开始查找，寻找最近的list命令输出
+    # 我们要找的是最新的时间戳后的list命令结果
+    latest_list_result = None
+    latest_timestamp = None
+    
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
+        
+        if not line:
+            continue
+            
+        # 尝试提取时间戳（不同服务器可能有不同的日志格式）
+        timestamp_match = re.search(r'\[(\d{2}:\d{2}:\d{2})\]', line)
+        if timestamp_match:
+            current_timestamp = timestamp_match.group(1)
+        else:
+            current_timestamp = None
+        
+        # 检查是否是list命令的结果
+        # 格式1: "There are X of a max of Y players online: ..."
+        pattern1 = r"There are (\d+) of a max of \d+ players online:?\s*(.*)"
+        match1 = re.search(pattern1, line)
+        if match1:
+            player_count = int(match1.group(1))
+            players_str = match1.group(2).strip()
+            
+            if player_count == 0:
+                latest_list_result = []
+            elif players_str:
+                latest_list_result = [name.strip() for name in players_str.split(',') if name.strip()]
+            else:
+                latest_list_result = []
+            
+            latest_timestamp = current_timestamp
+            break
+        
+        # 格式2: "Online players (X): ..."
+        pattern2 = r"Online players \((\d+)\):\s*(.*)"
+        match2 = re.search(pattern2, line)
+        if match2:
+            player_count = int(match2.group(1))
+            players_str = match2.group(2).strip()
+            
+            if player_count == 0:
+                latest_list_result = []
+            elif players_str:
+                latest_list_result = [name.strip() for name in players_str.split(',') if name.strip()]
+            else:
+                latest_list_result = []
+            
+            latest_timestamp = current_timestamp
+            break
+        
+        # 如果查找了太多行还没找到，就停止
+        if len(lines) - i > 30:
+            break
+    
+    return latest_list_result
+
+def parse_player_list_from_log(log_text: str) -> list:
+    """保留原函数作为备用"""
+    return parse_latest_player_list(log_text)
 
 @server_command.handle()
 @check_command_enabled('server_command')
@@ -604,16 +601,17 @@ async def handle_server_command(event: Event):
         return
     
     if not args:
-        preset_list = ', '.join(PRESET_COMMANDS.keys())
-        await server_command.send(f'❌ 参数错误\n用法: /server_command <服务器名> <指令>\n\n预设指令: {preset_list}')
-        return
-    
-    if len(args) < 2:
         await server_command.send('❌ 请提供服务器名和指令\n用法: /server_command <服务器名> <指令>')
         return
     
     server_name = args[0]
-    command_input = args[1]
+    
+    # 将除服务器名外的所有参数组合成完整指令
+    if len(args) < 2:
+        await server_command.send('❌ 请提供要发送的指令\n用法: /server_command <服务器名> <指令>')
+        return
+    
+    command = ' '.join(args[1:])  # 将服务器名后的所有参数组合成指令
     
     try:
         instance_id = get_instance_id(server_name)
@@ -621,20 +619,11 @@ async def handle_server_command(event: Event):
         await server_command.send(f'❌ {str(e)}')
         return
     
-    # 检查是否为预设命令
-    if command_input in PRESET_COMMANDS:
-        actual_command = PRESET_COMMANDS[command_input]
-        command_display = f'{command_input} -> {actual_command}'
-    else:
-        # 如果不是预设命令，使用完整的命令参数
-        actual_command = ' '.join(args[1:])
-        command_display = actual_command
-    
     try:
-        result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], actual_command)
+        result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], command)
         
         if result:
-            await server_command.send(f'✅ 已发送指令到服务器 {server_name}\n指令: {command_display}')
+            await server_command.send(f'✅ 已发送指令到服务器 {server_name}\n指令: {command}')
         else:
             await server_command.send(f'❌ 发送指令失败')
     except Exception as e:
