@@ -512,7 +512,9 @@ def parse_player_list_from_log(log_text: str) -> list:
 async def handle_player_list(event: Event):
     """查询指定服务器玩家列表"""
     user, args, group = get_context(event)
-    
+
+    await player_list.send('正在查询, 请等候3-10秒......')
+
     if not check_mcsm_config():
         await player_list.send('❌ MCSM配置不完整，请检查环境变量配置')
         return
