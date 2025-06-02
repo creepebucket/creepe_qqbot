@@ -23,6 +23,9 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
         'mcsm_status', 'server_list', 'server_info', 'server_status',
         'server_start', 'server_stop', 'server_restart', 'server_kill'
     ],
+    'mc备份': [
+        'server_backup', 'backup_info', 'backup_list', 'backup_rollback'
+    ],
 }
 
 def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:

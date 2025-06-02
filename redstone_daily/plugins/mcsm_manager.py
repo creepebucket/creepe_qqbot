@@ -289,7 +289,24 @@ Thumbs.db
             # 步骤4: 管理备份数量 - 使用 rebase 合并旧提交
             await manage_backup_history(backup_path)
             
-            return True, f'备份完成: {commit_message}'
+            # 计算备份大小
+            total_size = get_directory_size(backup_path)
+            
+            # 计算世界存档大小（如果是全服备份）
+            world_size = 0
+            if GIT_BACKUP_CONFIG['backup_target'].lower() != 'world':
+                world_dir = os.path.join(backup_path, 'world')
+                if os.path.exists(world_dir):
+                    world_size = get_directory_size(world_dir)
+            else:
+                world_size = total_size
+            
+            # 构建结果消息
+            size_info = f'总大小: {format_size(total_size)}'
+            if world_size > 0 and GIT_BACKUP_CONFIG['backup_target'].lower() != 'world':
+                size_info += f' | 存档大小: {format_size(world_size)}'
+            
+            return True, f'备份完成: {commit_message}\n📊 {size_info}'
             
         finally:
             # 恢复原工作目录
@@ -512,6 +529,53 @@ async def resolve_version_to_commit(backup_path: str, version_input: str) -> str
         
     except (subprocess.CalledProcessError, ValueError):
         return ''
+
+def get_directory_size(path: str) -> int:
+    """
+    计算目录大小（字节）
+    
+    Args:
+        path: 目录路径
+        
+    Returns:
+        int: 目录大小（字节）
+    """
+    total_size = 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    total_size += os.path.getsize(filepath)
+                except (OSError, FileNotFoundError):
+                    # 文件可能被删除或无法访问，跳过
+                    continue
+    except (OSError, PermissionError):
+        pass
+    return total_size
+
+def format_size(size_bytes: int) -> str:
+    """
+    将字节数格式化为人类可读的大小
+    
+    Args:
+        size_bytes: 字节数
+        
+    Returns:
+        str: 格式化的大小字符串
+    """
+    if size_bytes == 0:
+        return '0 B'
+    
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024.0:
+            if unit == 'B':
+                return f'{int(size_bytes)} {unit}'
+            else:
+                return f'{size_bytes:.1f} {unit}'
+        size_bytes /= 1024.0
+    
+    return f'{size_bytes:.1f} PB'
 
 @mcsm_status.handle()
 @check_command_enabled('mcsm_status')
@@ -1204,6 +1268,23 @@ async def handle_backup_info(event: Event):
                 
                 message += f'文件数量: {file_count} 个\n'
                 
+                # 添加大小信息
+                total_size = get_directory_size(backup_path)
+                message += f'总大小: {format_size(total_size)}\n'
+                
+                # Git 仓库大小
+                git_dir = os.path.join(backup_path, '.git')
+                if os.path.exists(git_dir):
+                    git_size = get_directory_size(git_dir)
+                    message += f'Git仓库: {format_size(git_size)}\n'
+                
+                # 如果是全服备份，单独显示世界大小
+                if GIT_BACKUP_CONFIG['backup_target'].lower() != 'world':
+                    world_dir = os.path.join(backup_path, 'world')
+                    if os.path.exists(world_dir):
+                        world_size = get_directory_size(world_dir)
+                        message += f'存档大小: {format_size(world_size)}\n'
+                
                 if file_count == 0:
                     message += f'\n⚠️ 备份目录为空！\n'
                     message += f'请确保：\n'
@@ -1293,9 +1374,46 @@ async def handle_backup_list(event: Event):
                 # 解析提交信息
                 parts = commit.split(' ', 1)
                 if len(parts) >= 2:
-                    commit_hash = parts[0][:8]  # 取前8位
+                    commit_hash = parts[0]
                     commit_msg = parts[1]
-                    message += f'{i:2d}. {commit_hash} - {commit_msg}\n'
+                    
+                    # 获取提交日期
+                    date_result = subprocess.run(
+                        ['git', 'log', '-1', '--format=%ci', commit_hash],
+                        cwd=backup_path,
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    # 获取文件变化统计
+                    stat_result = subprocess.run(
+                        ['git', 'show', '--stat', '--format=', commit_hash],
+                        cwd=backup_path,
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    # 格式化显示
+                    commit_date = ''
+                    if date_result.returncode == 0:
+                        full_date = date_result.stdout.strip()
+                        # 提取日期部分 (YYYY-MM-DD HH:MM)
+                        commit_date = full_date[:16] if len(full_date) >= 16 else full_date
+                    
+                    # 解析文件变化统计
+                    file_changes = ''
+                    if stat_result.returncode == 0 and stat_result.stdout.strip():
+                        lines = stat_result.stdout.strip().split('\n')
+                        if lines:
+                            # 最后一行通常是统计信息
+                            last_line = lines[-1]
+                            if 'file' in last_line and ('insertion' in last_line or 'deletion' in last_line):
+                                # 简化统计信息
+                                file_changes = f' ({last_line.strip()})'
+                    
+                    message += f'{i:2d}. {commit_hash[:8]} - {commit_msg}\n'
+                    if commit_date:
+                        message += f'     📅 {commit_date}{file_changes}\n'
                 else:
                     message += f'{i:2d}. {commit}\n'
             
