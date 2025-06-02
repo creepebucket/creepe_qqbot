@@ -218,7 +218,7 @@ async def execute_git_backup(server_name: str, backup_description: str = '') -> 
         
         # 等待存档完成
         import time
-        time.sleep(3)
+        time.sleep(20)
         
         # 切换到备份目录
         original_cwd = os.getcwd()
