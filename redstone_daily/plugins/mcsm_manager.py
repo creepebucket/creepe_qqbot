@@ -60,6 +60,8 @@ GIT_BACKUP_CONFIG = {
     'git_user_name': get_env_str('GIT_BACKUP_USER_NAME', 'MCSM Bot'),
     'git_user_email': get_env_str('GIT_BACKUP_USER_EMAIL', 'bot@mcsm.local'),
     'backup_paths': get_env_list('GIT_BACKUP_PATHS', []),  # 服务器路径映射
+    'mcsm_base_path': get_env_str('MCSM_BASE_PATH', '/opt/mcsmanager/daemon/data/InstanceData'),
+    'backup_target': get_env_str('MCSM_BACKUP_TARGET', 'full'),  # 'full' 或 'world'
 }
 
 # 服务器实例映射 - 从环境变量读取
@@ -94,9 +96,18 @@ def check_git_backup_config() -> bool:
     """检查Git备份配置是否完整"""
     if not GIT_BACKUP_CONFIG['enabled']:
         return False
-    if not GIT_BACKUP_CONFIG['backup_paths']:
-        return False
-    return True
+    
+    # 如果配置了具体的备份路径，检查路径配置
+    if GIT_BACKUP_CONFIG['backup_paths']:
+        return True
+    
+    # 如果没有配置具体路径，检查是否可以使用动态路径生成
+    # 检查是否有服务器实例配置
+    if SERVER_INSTANCES:
+        return True
+    
+    # 都没有配置，返回False
+    return False
 
 def get_server_backup_path(server_name: str) -> str:
     """获取服务器备份路径"""
@@ -114,6 +125,34 @@ def get_server_backup_path(server_name: str) -> str:
                 normalized_path = os.path.normpath(path.strip())
                 return os.path.abspath(normalized_path)
     
+    # 动态生成MCSM标准路径
+    try:
+        # 获取服务器实例ID
+        instance_id = get_instance_id(server_name)
+        
+        # 获取MCSM基础路径配置
+        mcsm_base_path = get_env_str('MCSM_BASE_PATH', '/opt/mcsmanager/daemon/data/InstanceData')
+        backup_target = get_env_str('MCSM_BACKUP_TARGET', 'full')  # 'full' 或 'world'
+        
+        # 构建服务器目录路径
+        server_dir = os.path.join(mcsm_base_path, instance_id)
+        
+        # 根据备份目标选择路径
+        if backup_target.lower() == 'world':
+            # 只备份存档目录
+            backup_path = os.path.join(server_dir, 'world')
+        else:
+            # 备份整个服务器目录
+            backup_path = server_dir
+        
+        # 规范化路径
+        normalized_path = os.path.normpath(backup_path)
+        return os.path.abspath(normalized_path)
+        
+    except ValueError:
+        # 如果无法获取实例ID，回退到基础路径模式
+        pass
+    
     # 如果没有具体配置，使用默认路径
     if backup_paths and isinstance(backup_paths[0], str):
         base_path = backup_paths[0]
@@ -123,7 +162,7 @@ def get_server_backup_path(server_name: str) -> str:
         normalized_path = os.path.normpath(server_path)
         return os.path.abspath(normalized_path)
     
-    raise ValueError(f'未配置服务器 "{server_name}" 的备份路径')
+    raise ValueError(f'未配置服务器 "{server_name}" 的备份路径，请配置 MCSM_BASE_PATH 或 GIT_BACKUP_PATHS')
 
 async def execute_git_backup(server_name: str, backup_description: str = '') -> tuple[bool, str]:
     """
