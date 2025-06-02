@@ -579,41 +579,20 @@ def format_size(size_bytes: int) -> str:
     
     return f'{size_bytes:.1f} PB'
 
-def check_server_permission(user: User, server_name: str, group) -> bool:
+async def check_server_permission_async(user: User, server_name: str, group) -> bool:
     """
     检查用户是否有指定服务器的特殊权限
     
     Args:
         user: 用户对象
         server_name: 服务器名称
-        group: 群组对象
-        
-    Returns:
-        bool: 是否有权限
-    """
-    import asyncio
-    try:
-        # 检查用户是否有对应服务器名称的特殊权限
-        loop = asyncio.get_event_loop()
-        has_permission = loop.run_until_complete(user.has_special_permission(server_name, group))
-        return has_permission
-    except Exception:
-        return False
-
-async def check_server_permission_async(user: User, server_name: str, group) -> bool:
-    """
-    异步检查用户是否有指定服务器的特殊权限
-    
-    Args:
-        user: 用户对象
-        server_name: 服务器名称
-        group: 群组对象
+        group: 群组对象（保留参数以保持接口一致性）
         
     Returns:
         bool: 是否有权限
     """
     try:
-        return await user.has_special_permission(server_name, group)
+        return await user.has_special_permission(server_name)
     except Exception:
         return False
 
