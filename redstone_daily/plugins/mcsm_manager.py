@@ -27,6 +27,7 @@ add_info('whitelist', 'MC白名单管理\n需要mc_server特殊权限\n用法: /
 add_info('players', '查询所有服务器概览信息\n无需权限\n用法: /players')
 add_info('player_list', '查询指定服务器在线玩家名单\n无需权限\n用法: /player_list [服务器名]')
 add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>')
+add_info('server_backup', 'Git备份服务器存档\n需要mc_server特殊权限\n用法: /server_backup <服务器名> [备份描述]')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -41,12 +42,22 @@ whitelist = on_command('whitelist')
 players = on_command('players')
 player_list = on_command('player_list')
 server_command = on_command('server_command')
+server_backup = on_command('server_backup')
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
     'url': get_env_str('MCSM_URL', 'http://localhost:23333'),
     'apikey': get_env_str('MCSM_APIKEY', ''),
     'daemon_id': get_env_str('MCSM_DAEMON_ID', ''),
+}
+
+# Git 备份配置 - 从环境变量读取
+GIT_BACKUP_CONFIG = {
+    'enabled': get_env_str('GIT_BACKUP_ENABLED', 'false').lower() == 'true',
+    'max_backups': int(get_env_str('GIT_BACKUP_MAX_COUNT', '10')),
+    'git_user_name': get_env_str('GIT_BACKUP_USER_NAME', 'MCSM Bot'),
+    'git_user_email': get_env_str('GIT_BACKUP_USER_EMAIL', 'bot@mcsm.local'),
+    'backup_paths': get_env_list('GIT_BACKUP_PATHS', []),  # 服务器路径映射
 }
 
 # 服务器实例映射 - 从环境变量读取
@@ -76,6 +87,181 @@ def check_mcsm_config() -> bool:
     if not MCSM_CONFIG['daemon_id']:
         return False
     return True
+
+def check_git_backup_config() -> bool:
+    """检查Git备份配置是否完整"""
+    if not GIT_BACKUP_CONFIG['enabled']:
+        return False
+    if not GIT_BACKUP_CONFIG['backup_paths']:
+        return False
+    return True
+
+def get_server_backup_path(server_name: str) -> str:
+    """获取服务器备份路径"""
+    # 从配置中获取服务器路径映射
+    backup_paths = GIT_BACKUP_CONFIG['backup_paths']
+    
+    # 如果配置了具体的服务器路径
+    for path_config in backup_paths:
+        if isinstance(path_config, str) and ':' in path_config:
+            name, path = path_config.split(':', 1)
+            if name.strip().lower() == server_name.lower():
+                return path.strip()
+    
+    # 如果没有具体配置，使用默认路径
+    if backup_paths and isinstance(backup_paths[0], str):
+        base_path = backup_paths[0]
+        return f'{base_path}/{server_name}'
+    
+    raise ValueError(f'未配置服务器 "{server_name}" 的备份路径')
+
+async def execute_git_backup(server_name: str, backup_description: str = '') -> tuple[bool, str]:
+    """
+    执行 Git 备份流程
+    
+    Args:
+        server_name: 服务器名称
+        backup_description: 备份描述
+        
+    Returns:
+        tuple[bool, str]: (是否成功, 结果消息)
+    """
+    import subprocess
+    import os
+    from datetime import datetime
+    
+    try:
+        # 获取服务器实例ID和备份路径
+        instance_id = get_instance_id(server_name)
+        backup_path = get_server_backup_path(server_name)
+        
+        # 检查备份路径是否存在
+        if not os.path.exists(backup_path):
+            return False, f'备份路径不存在: {backup_path}'
+        
+        # 步骤1: 发送 save-all 指令保存世界
+        save_result = applications.send_command(
+            MCSM_CONFIG['url'], 
+            instance_id, 
+            MCSM_CONFIG['daemon_id'], 
+            MCSM_CONFIG['apikey'], 
+            'save-all'
+        )
+        
+        if not save_result:
+            return False, '发送存档保存指令失败'
+        
+        # 等待存档完成
+        import time
+        time.sleep(3)
+        
+        # 切换到备份目录
+        original_cwd = os.getcwd()
+        os.chdir(backup_path)
+        
+        try:
+            # 步骤2: 检查是否需要 git 初始化
+            if not os.path.exists('.git'):
+                # 初始化 git 仓库
+                subprocess.run(['git', 'init'], check=True, capture_output=True)
+                subprocess.run(['git', 'config', 'user.name', GIT_BACKUP_CONFIG['git_user_name']], check=True)
+                subprocess.run(['git', 'config', 'user.email', GIT_BACKUP_CONFIG['git_user_email']], check=True)
+            
+            # 添加所有文件到暂存区
+            subprocess.run(['git', 'add', '.'], check=True, capture_output=True)
+            
+            # 检查是否有变更
+            status_result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
+            if not status_result.stdout.strip():
+                return True, '没有检测到变更，无需备份'
+            
+            # 步骤3: 创建提交
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            commit_message = f'[{server_name}] 自动备份 - {current_time}'
+            if backup_description:
+                commit_message += f' - {backup_description}'
+                
+            subprocess.run(['git', 'commit', '-m', commit_message], check=True, capture_output=True)
+            
+            # 步骤4: 管理备份数量 - 使用 rebase 合并旧提交
+            await manage_backup_history(backup_path)
+            
+            return True, f'备份完成: {commit_message}'
+            
+        finally:
+            # 恢复原工作目录
+            os.chdir(original_cwd)
+            
+    except subprocess.CalledProcessError as e:
+        return False, f'Git 操作失败: {e.stderr.decode() if e.stderr else str(e)}'
+    except Exception as e:
+        return False, f'备份过程出错: {str(e)}'
+
+async def manage_backup_history(backup_path: str):
+    """
+    管理备份历史记录，保持指定数量的备份
+    
+    Args:
+        backup_path: 备份路径
+    """
+    import subprocess
+    import os
+    
+    max_backups = GIT_BACKUP_CONFIG['max_backups']
+    if max_backups <= 0:
+        return
+    
+    try:
+        # 获取提交数量
+        commit_count_result = subprocess.run(
+            ['git', 'rev-list', '--count', 'HEAD'], 
+            capture_output=True, 
+            text=True, 
+            cwd=backup_path
+        )
+        
+        commit_count = int(commit_count_result.stdout.strip())
+        
+        # 如果提交数量超过限制，进行 rebase 合并
+        if commit_count > max_backups:
+            # 计算需要保留的提交数
+            commits_to_keep = max_backups - 1  # 保留最近的几个提交
+            
+            # 获取要保留的最老提交的 hash
+            oldest_to_keep_result = subprocess.run(
+                ['git', 'rev-list', '--reverse', 'HEAD', f'--max-count={commits_to_keep}'],
+                capture_output=True,
+                text=True,
+                cwd=backup_path
+            )
+            
+            if oldest_to_keep_result.stdout.strip():
+                oldest_hash = oldest_to_keep_result.stdout.strip().split('\n')[0]
+                
+                # 使用 rebase 将旧提交合并为一个
+                # 首先创建一个临时分支
+                subprocess.run(['git', 'branch', 'temp-backup'], cwd=backup_path, capture_output=True)
+                
+                try:
+                    # 重置到最老的保留提交
+                    subprocess.run(['git', 'reset', '--soft', f'{oldest_hash}~1'], cwd=backup_path, check=True)
+                    
+                    # 创建一个合并提交
+                    subprocess.run([
+                        'git', 'commit', '-m', f'[{os.path.basename(backup_path)}] 历史备份合并 - 保留最近{max_backups}个备份'
+                    ], cwd=backup_path, check=True, capture_output=True)
+                    
+                    # 删除临时分支
+                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+                    
+                except subprocess.CalledProcessError:
+                    # 如果 rebase 失败，恢复到临时分支
+                    subprocess.run(['git', 'reset', '--hard', 'temp-backup'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+        
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        # 如果历史管理失败，不影响备份主流程
+        pass
 
 @mcsm_status.handle()
 @check_command_enabled('mcsm_status')
@@ -627,4 +813,61 @@ async def handle_server_command(event: Event):
         else:
             await server_command.send(f'❌ 发送指令失败')
     except Exception as e:
-        await server_command.send(f'❌ 发送指令时出错: {str(e)}') 
+        await server_command.send(f'❌ 发送指令时出错: {str(e)}')
+
+@server_backup.handle()
+@check_command_enabled('server_backup')
+@permission_required('mc_server')
+async def handle_server_backup(event: Event):
+    """Git备份服务器存档"""
+    user, args, group = get_context(event)
+    
+    # 检查MCSM配置
+    if not check_mcsm_config():
+        await server_backup.send('❌ MCSM配置不完整，请检查环境变量配置')
+        return
+    
+    # 检查Git备份配置
+    if not check_git_backup_config():
+        await server_backup.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    # 参数验证
+    if not args:
+        available_servers = ', '.join(SERVER_INSTANCES.keys())
+        await server_backup.send(f'❌ 请指定服务器名\n用法: /server_backup <服务器名> [备份描述]\n可用服务器: {available_servers}')
+        return
+    
+    server_name = args[0]
+    backup_description = ' '.join(args[1:]) if len(args) > 1 else ''
+    
+    # 验证服务器名是否存在
+    try:
+        get_instance_id(server_name)
+    except ValueError as e:
+        await server_backup.send(f'❌ {str(e)}')
+        return
+    
+    # 验证备份路径配置
+    try:
+        get_server_backup_path(server_name)
+    except ValueError as e:
+        await server_backup.send(f'❌ {str(e)}')
+        return
+    
+    # 发送开始备份的消息
+    await server_backup.send(f'🔄 开始备份服务器 {server_name}...')
+    
+    try:
+        # 执行备份
+        success, message = await execute_git_backup(server_name, backup_description)
+        
+        if success:
+            await server_backup.send(f'✅ {message}')
+        else:
+            await server_backup.send(f'❌ 备份失败: {message}')
+            
+    except Exception as e:
+        import logging
+        logging.error(f'备份服务器 {server_name} 时出错: {str(e)}', exc_info=True)
+        await server_backup.send(f'❌ 备份过程中发生未知错误，请查看日志或联系管理员') 
