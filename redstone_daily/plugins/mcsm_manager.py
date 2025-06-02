@@ -13,6 +13,7 @@ from redstone_daily.plugins.utils import (
     get_env_str, get_env_list
 )
 from baimomcsm_api import common, applications
+import os
 
 # 帮助信息
 add_info('mcsm_status', 'MCSM面板状态查看\n需要mc_server特殊权限\n用法: /mcsm_status')
@@ -1005,7 +1006,6 @@ async def handle_backup_info(event: Event):
             message += f'备份路径: {backup_path}\n'
             
             # 检查目录状态
-            import os
             if os.path.exists(backup_path):
                 message += f'目录状态: ✅ 存在\n'
                 
