@@ -10,29 +10,29 @@ from nonebot.adapters.onebot.v11 import Event
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import (
     get_context, permission_required, check_command_enabled,
-    get_env_str, get_env_list, get_database
+    get_env_str, get_env_list, get_database, User
 )
 from baimomcsm_api import common, applications
 import os
 
 # 帮助信息
 add_info('mcsm_status', 'MCSM面板状态查看\n需要mc_server特殊权限\n用法: /mcsm_status')
-add_info('server_list', '服务器实例列表\n需要mc_server特殊权限\n用法: /server_list')
-add_info('server_info', '查看服务器详情\n需要mc_server特殊权限\n用法: /server_info <服务器名>')
-add_info('server_status', '查看服务器状态\n需要mc_server特殊权限\n用法: /server_status <服务器名>')
-add_info('server_start', '启动服务器\n需要mc_server特殊权限\n用法: /server_start <服务器名>')
-add_info('server_stop', '停止服务器\n需要mc_server特殊权限\n用法: /server_stop <服务器名>')
-add_info('server_restart', '重启服务器\n需要mc_server特殊权限\n用法: /server_restart <服务器名>')
-add_info('server_kill', '强制停止服务器\n需要mc_server特殊权限\n用法: /server_kill <服务器名>')
-add_info('whitelist', 'MC白名单管理\n需要mc_server特殊权限\n用法: /whitelist <add/remove/list> [玩家名] [服务器名]')
+add_info('server_list', '服务器实例列表\n无需权限\n用法: /server_list')
+add_info('server_info', '查看服务器详情\n无需权限\n用法: /server_info <服务器名>')
+add_info('server_status', '查看服务器状态\n无需权限\n用法: /server_status <服务器名>')
+add_info('server_start', '启动服务器\n需要对应服务器特殊权限\n用法: /server_start <服务器名>')
+add_info('server_stop', '停止服务器\n需要对应服务器特殊权限\n用法: /server_stop <服务器名>')
+add_info('server_restart', '重启服务器\n需要对应服务器特殊权限\n用法: /server_restart <服务器名>')
+add_info('server_kill', '强制停止服务器\n需要对应服务器特殊权限\n用法: /server_kill <服务器名>')
+add_info('whitelist', 'MC白名单管理\n需要对应服务器特殊权限\n用法: /whitelist <add/remove/list> [玩家名] [服务器名]')
 add_info('players', '查询所有服务器概览信息\n无需权限\n用法: /players')
 add_info('player_list', '查询指定服务器在线玩家名单\n无需权限\n用法: /player_list [服务器名]')
-add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>')
-add_info('server_backup', 'Git备份服务器存档\n需要mc_server特殊权限\n用法: /server_backup <服务器名> [备份描述]')
-add_info('backup_info', '查看备份配置信息\n需要mc_server特殊权限\n用法: /backup_info [服务器名]')
-add_info('backup_list', '查看备份历史列表\n需要mc_server特殊权限\n用法: /backup_list <服务器名>')
-add_info('backup_rollback', '回滚到指定备份版本\n需要mc_server特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
-add_info('auto_backup', '管理定时自动备份\n需要mc_server特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
+add_info('server_command', '给服务器发送指令\n需要对应服务器特殊权限\n用法: /server_command <服务器名> <指令>')
+add_info('server_backup', 'Git备份服务器存档\n需要对应服务器特殊权限\n用法: /server_backup <服务器名> [备份描述]')
+add_info('backup_info', '查看备份配置信息\n无需权限\n用法: /backup_info [服务器名]')
+add_info('backup_list', '查看备份历史列表\n无需权限\n用法: /backup_list <服务器名>')
+add_info('backup_rollback', '回滚到指定备份版本\n需要对应服务器特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
+add_info('auto_backup', '管理定时自动备份\n需要对应服务器特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -579,6 +579,44 @@ def format_size(size_bytes: int) -> str:
     
     return f'{size_bytes:.1f} PB'
 
+def check_server_permission(user: User, server_name: str, group) -> bool:
+    """
+    检查用户是否有指定服务器的特殊权限
+    
+    Args:
+        user: 用户对象
+        server_name: 服务器名称
+        group: 群组对象
+        
+    Returns:
+        bool: 是否有权限
+    """
+    import asyncio
+    try:
+        # 检查用户是否有对应服务器名称的特殊权限
+        loop = asyncio.get_event_loop()
+        has_permission = loop.run_until_complete(user.has_special_permission(server_name, group))
+        return has_permission
+    except Exception:
+        return False
+
+async def check_server_permission_async(user: User, server_name: str, group) -> bool:
+    """
+    异步检查用户是否有指定服务器的特殊权限
+    
+    Args:
+        user: 用户对象
+        server_name: 服务器名称
+        group: 群组对象
+        
+    Returns:
+        bool: 是否有权限
+    """
+    try:
+        return await user.has_special_permission(server_name, group)
+    except Exception:
+        return False
+
 @mcsm_status.handle()
 @check_command_enabled('mcsm_status')
 @permission_required('mc_server')
@@ -610,7 +648,6 @@ async def handle_mcsm_status(event: Event):
 
 @server_list.handle()
 @check_command_enabled('server_list')
-@permission_required('mc_server')
 async def handle_server_list(event: Event):
     """查看服务器列表"""
     user, args, group = get_context(event)
@@ -635,7 +672,6 @@ async def handle_server_list(event: Event):
 
 @server_info.handle()
 @check_command_enabled('server_info')
-@permission_required('mc_server')
 async def handle_server_info(event: Event):
     """查看服务器详情"""
     user, args, group = get_context(event)
@@ -672,7 +708,6 @@ async def handle_server_info(event: Event):
 
 @server_status.handle()
 @check_command_enabled('server_status')
-@permission_required('mc_server')
 async def handle_server_status(event: Event):
     """查看服务器状态"""
     user, args, group = get_context(event)
@@ -712,7 +747,6 @@ async def handle_server_status(event: Event):
 
 @server_start.handle()
 @check_command_enabled('server_start')
-@permission_required('mc_server')
 async def handle_server_start(event: Event):
     """启动服务器"""
     user, args, group = get_context(event)
@@ -726,7 +760,17 @@ async def handle_server_start(event: Event):
         return
     
     server_name = args[0]
-    instance_id = get_instance_id(server_name)
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_start.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
+    try:
+        instance_id = get_instance_id(server_name)
+    except ValueError as e:
+        await server_start.send(f'❌ {str(e)}')
+        return
     
     result = applications.start_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
@@ -737,7 +781,6 @@ async def handle_server_start(event: Event):
 
 @server_stop.handle()
 @check_command_enabled('server_stop')
-@permission_required('mc_server')
 async def handle_server_stop(event: Event):
     """停止服务器"""
     user, args, group = get_context(event)
@@ -751,7 +794,17 @@ async def handle_server_stop(event: Event):
         return
     
     server_name = args[0]
-    instance_id = get_instance_id(server_name)
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_stop.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
+    try:
+        instance_id = get_instance_id(server_name)
+    except ValueError as e:
+        await server_stop.send(f'❌ {str(e)}')
+        return
     
     result = applications.stop_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
@@ -762,7 +815,6 @@ async def handle_server_stop(event: Event):
 
 @server_restart.handle()
 @check_command_enabled('server_restart')
-@permission_required('mc_server')
 async def handle_server_restart(event: Event):
     """重启服务器"""
     user, args, group = get_context(event)
@@ -776,7 +828,17 @@ async def handle_server_restart(event: Event):
         return
     
     server_name = args[0]
-    instance_id = get_instance_id(server_name)
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_restart.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
+    try:
+        instance_id = get_instance_id(server_name)
+    except ValueError as e:
+        await server_restart.send(f'❌ {str(e)}')
+        return
     
     result = applications.restart_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
@@ -787,7 +849,6 @@ async def handle_server_restart(event: Event):
 
 @server_kill.handle()
 @check_command_enabled('server_kill')
-@permission_required('mc_server')
 async def handle_server_kill(event: Event):
     """强制停止服务器"""
     user, args, group = get_context(event)
@@ -801,7 +862,17 @@ async def handle_server_kill(event: Event):
         return
     
     server_name = args[0]
-    instance_id = get_instance_id(server_name)
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_kill.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
+    try:
+        instance_id = get_instance_id(server_name)
+    except ValueError as e:
+        await server_kill.send(f'❌ {str(e)}')
+        return
     
     result = applications.kill_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
     
@@ -812,7 +883,6 @@ async def handle_server_kill(event: Event):
 
 @whitelist.handle()
 @check_command_enabled('whitelist')
-@permission_required('mc_server')
 async def handle_whitelist(event: Event):
     """MC白名单管理"""
     user, args, group = get_context(event)
@@ -830,7 +900,17 @@ async def handle_whitelist(event: Event):
     if action == 'list':
         # 列出白名单
         server_name = args[1] if len(args) > 1 else 'slimefun'
-        instance_id = get_instance_id(server_name)
+        
+        # 检查用户是否有该服务器的特殊权限
+        if not await check_server_permission_async(user, server_name, group):
+            await whitelist.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+            return
+        
+        try:
+            instance_id = get_instance_id(server_name)
+        except ValueError as e:
+            await whitelist.send(f'❌ {str(e)}')
+            return
         
         result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], 'whitelist list')
         
@@ -846,7 +926,17 @@ async def handle_whitelist(event: Event):
         
         player_name = args[1]
         server_name = args[2] if len(args) > 2 else 'slimefun'
-        instance_id = get_instance_id(server_name)
+        
+        # 检查用户是否有该服务器的特殊权限
+        if not await check_server_permission_async(user, server_name, group):
+            await whitelist.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+            return
+        
+        try:
+            instance_id = get_instance_id(server_name)
+        except ValueError as e:
+            await whitelist.send(f'❌ {str(e)}')
+            return
         
         command = f'whitelist {action} {player_name}'
         result = applications.send_command(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'], command)
@@ -1093,7 +1183,6 @@ def parse_player_list_from_log(log_text: str) -> list:
 
 @server_command.handle()
 @check_command_enabled('server_command')
-@permission_required('mc_server')
 async def handle_server_command(event: Event):
     """给服务器发送指令"""
     user, args, group = get_context(event)
@@ -1107,6 +1196,11 @@ async def handle_server_command(event: Event):
         return
     
     server_name = args[0]
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_command.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
     
     # 将除服务器名外的所有参数组合成完整指令
     if len(args) < 2:
@@ -1133,7 +1227,6 @@ async def handle_server_command(event: Event):
 
 @server_backup.handle()
 @check_command_enabled('server_backup')
-@permission_required('mc_server')
 async def handle_server_backup(event: Event):
     """Git备份服务器存档"""
     user, args, group = get_context(event)
@@ -1155,6 +1248,12 @@ async def handle_server_backup(event: Event):
         return
     
     server_name = args[0]
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await server_backup.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
     backup_description = ' '.join(args[1:]) if len(args) > 1 else ''
     
     # 验证服务器名是否存在
@@ -1190,7 +1289,6 @@ async def handle_server_backup(event: Event):
 
 @backup_info.handle()
 @check_command_enabled('backup_info')
-@permission_required('mc_server')
 async def handle_backup_info(event: Event):
     """查看备份配置信息"""
     user, args, group = get_context(event)
@@ -1324,7 +1422,6 @@ async def handle_backup_info(event: Event):
 
 @backup_list.handle()
 @check_command_enabled('backup_list')
-@permission_required('mc_server')
 async def handle_backup_list(event: Event):
     """查看备份历史列表"""
     user, args, group = get_context(event)
@@ -1433,7 +1530,6 @@ async def handle_backup_list(event: Event):
 
 @backup_rollback.handle()
 @check_command_enabled('backup_rollback')
-@permission_required('mc_server')
 async def handle_backup_rollback(event: Event):
     """回滚到指定备份版本"""
     user, args, group = get_context(event)
@@ -1452,6 +1548,11 @@ async def handle_backup_rollback(event: Event):
     
     server_name = args[0]
     version_input = args[1]
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await backup_rollback.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
     
     try:
         instance_id = get_instance_id(server_name)
@@ -1644,7 +1745,6 @@ async def stop_backup_scheduler():
 
 @auto_backup.handle()
 @check_command_enabled('auto_backup')
-@permission_required('mc_server')
 async def handle_auto_backup(event: Event):
     """管理定时自动备份"""
     user, args, group = get_context(event)
@@ -1720,6 +1820,11 @@ async def handle_auto_backup(event: Event):
     
     server_name = args[1]
     
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await auto_backup.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
     # 验证服务器名
     try:
         get_instance_id(server_name)
@@ -1766,4 +1871,4 @@ async def handle_auto_backup(event: Event):
         await auto_backup.send(f'✅ 已禁用服务器 {server_name} 的自动备份')
     
     else:
-        await auto_backup.send('❌ 无效操作，请使用 on、off 或 status') 
+        await auto_backup.send('❌ 无效操作，请使用 on、off 或 status')
