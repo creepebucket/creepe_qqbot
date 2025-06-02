@@ -30,6 +30,8 @@ add_info('player_list', '查询指定服务器在线玩家名单\n无需权限\n
 add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>')
 add_info('server_backup', 'Git备份服务器存档\n需要mc_server特殊权限\n用法: /server_backup <服务器名> [备份描述]')
 add_info('backup_info', '查看备份配置信息\n需要mc_server特殊权限\n用法: /backup_info [服务器名]')
+add_info('backup_list', '查看备份历史列表\n需要mc_server特殊权限\n用法: /backup_list <服务器名>')
+add_info('backup_rollback', '回滚到指定备份版本\n需要mc_server特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -46,6 +48,8 @@ player_list = on_command('player_list')
 server_command = on_command('server_command')
 server_backup = on_command('server_backup')
 backup_info = on_command('backup_info')
+backup_list = on_command('backup_list')
+backup_rollback = on_command('backup_rollback')
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
@@ -361,6 +365,153 @@ async def manage_backup_history(backup_path: str):
     except (subprocess.CalledProcessError, ValueError, IndexError):
         # 如果历史管理失败，不影响备份主流程
         pass
+
+async def execute_backup_rollback(server_name: str, instance_id: str, backup_path: str, version_input: str) -> tuple[bool, str]:
+    """
+    执行备份回滚操作
+    
+    Args:
+        server_name: 服务器名称
+        instance_id: MCSM实例ID
+        backup_path: 备份路径
+        version_input: 版本输入（序号或提交hash）
+        
+    Returns:
+        tuple[bool, str]: (是否成功, 结果消息)
+    """
+    import subprocess
+    import time
+    
+    try:
+        # 步骤1: 获取当前服务器状态
+        current_status = applications.get_status(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+        was_running = (current_status == 3)  # 3表示运行中
+        
+        # 步骤2: 如果服务器正在运行，先停止服务器
+        if was_running:
+            stop_result = applications.stop_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+            if not stop_result:
+                return False, '无法停止服务器'
+            
+            # 等待服务器停止
+            for _ in range(30):  # 最多等待30秒
+                time.sleep(1)
+                status = applications.get_status(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+                if status != 3:  # 不是运行状态
+                    break
+            else:
+                return False, '服务器停止超时，请手动检查服务器状态'
+        
+        # 步骤3: 解析版本输入，获取目标提交hash
+        target_commit = await resolve_version_to_commit(backup_path, version_input)
+        if not target_commit:
+            return False, f'无效的版本号: {version_input}'
+        
+        # 步骤4: 创建安全备份点（当前状态）
+        original_cwd = os.getcwd()
+        os.chdir(backup_path)
+        
+        try:
+            # 保存当前状态为临时分支
+            subprocess.run(['git', 'branch', 'rollback-backup-temp'], check=True, capture_output=True)
+            
+            # 执行回滚
+            subprocess.run(['git', 'reset', '--hard', target_commit], check=True, capture_output=True)
+            
+            # 获取目标提交的信息
+            commit_info_result = subprocess.run(
+                ['git', 'log', '-1', '--format=%h - %s (%ci)', target_commit],
+                capture_output=True,
+                text=True
+            )
+            commit_info = commit_info_result.stdout.strip() if commit_info_result.returncode == 0 else target_commit
+            
+        except subprocess.CalledProcessError as e:
+            # 回滚失败，恢复到原状态
+            try:
+                subprocess.run(['git', 'reset', '--hard', 'rollback-backup-temp'], capture_output=True)
+                subprocess.run(['git', 'branch', '-D', 'rollback-backup-temp'], capture_output=True)
+            except:
+                pass
+            return False, f'Git回滚操作失败: {e.stderr.decode() if e.stderr else str(e)}'
+        
+        finally:
+            os.chdir(original_cwd)
+        
+        # 步骤5: 如果原来服务器在运行，重新启动
+        if was_running:
+            time.sleep(2)  # 短暂等待
+            start_result = applications.start_app(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+            if not start_result:
+                # 启动失败，但回滚已成功
+                message = f'回滚成功: {commit_info}\n⚠️ 但服务器重启失败，请手动启动服务器'
+            else:
+                message = f'回滚成功: {commit_info}\n✅ 服务器已重新启动'
+        else:
+            message = f'回滚成功: {commit_info}\n💡 服务器保持停止状态'
+        
+        # 清理临时分支
+        try:
+            os.chdir(backup_path)
+            subprocess.run(['git', 'branch', '-D', 'rollback-backup-temp'], capture_output=True)
+            os.chdir(original_cwd)
+        except:
+            pass
+        
+        return True, message
+        
+    except Exception as e:
+        return False, f'回滚过程出错: {str(e)}'
+
+async def resolve_version_to_commit(backup_path: str, version_input: str) -> str:
+    """
+    解析版本输入为具体的提交hash
+    
+    Args:
+        backup_path: 备份路径
+        version_input: 版本输入（序号或提交hash）
+        
+    Returns:
+        str: 提交hash，失败返回空字符串
+    """
+    import subprocess
+    
+    try:
+        # 如果输入看起来像提交hash（长度为7-40的十六进制字符串）
+        if len(version_input) >= 7 and all(c in '0123456789abcdef' for c in version_input.lower()):
+            # 验证提交是否存在
+            result = subprocess.run(
+                ['git', 'rev-parse', '--verify', f'{version_input}^{{commit}}'],
+                cwd=backup_path,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        
+        # 如果输入是数字，当作序号处理
+        if version_input.isdigit():
+            sequence_num = int(version_input)
+            if sequence_num < 1:
+                return ''
+            
+            # 获取第N个提交的hash
+            result = subprocess.run(
+                ['git', 'rev-list', '--reverse', 'HEAD'],
+                cwd=backup_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                commits = result.stdout.strip().split('\n')
+                if 1 <= sequence_num <= len(commits):
+                    return commits[sequence_num - 1]
+        
+        return ''
+        
+    except (subprocess.CalledProcessError, ValueError):
+        return ''
 
 @mcsm_status.handle()
 @check_command_enabled('mcsm_status')
@@ -1086,4 +1237,134 @@ async def handle_backup_info(event: Event):
     except Exception as e:
         import logging
         logging.error(f'获取备份信息时出错: {str(e)}', exc_info=True)
-        await backup_info.send(f'❌ 获取备份信息时出错，请查看日志') 
+        await backup_info.send(f'❌ 获取备份信息时出错，请查看日志')
+
+@backup_list.handle()
+@check_command_enabled('backup_list')
+@permission_required('mc_server')
+async def handle_backup_list(event: Event):
+    """查看备份历史列表"""
+    user, args, group = get_context(event)
+    
+    if not check_git_backup_config():
+        await backup_list.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    if not args:
+        await backup_list.send('❌ 请指定服务器名\n用法: /backup_list <服务器名>')
+        return
+    
+    server_name = args[0]
+    
+    try:
+        get_instance_id(server_name)
+    except ValueError as e:
+        await backup_list.send(f'❌ {str(e)}')
+        return
+    
+    try:
+        # 获取备份路径
+        backup_path = get_server_backup_path(server_name)
+        
+        if not os.path.exists(backup_path):
+            await backup_list.send(f'❌ 备份目录不存在: {backup_path}')
+            return
+        
+        # 检查是否为Git仓库
+        git_path = os.path.join(backup_path, '.git')
+        if not os.path.exists(git_path):
+            await backup_list.send(f'❌ 服务器 {server_name} 还没有Git备份历史')
+            return
+        
+        # 获取Git提交历史
+        import subprocess
+        result = subprocess.run(
+            ['git', 'log', '--oneline', '--max-count=20'],
+            cwd=backup_path,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            commits = result.stdout.strip().split('\n')
+            message = f'📁 服务器 {server_name} 备份历史（最近20个）:\n\n'
+            
+            for i, commit in enumerate(commits, 1):
+                # 解析提交信息
+                parts = commit.split(' ', 1)
+                if len(parts) >= 2:
+                    commit_hash = parts[0][:8]  # 取前8位
+                    commit_msg = parts[1]
+                    message += f'{i:2d}. {commit_hash} - {commit_msg}\n'
+                else:
+                    message += f'{i:2d}. {commit}\n'
+            
+            message += f'\n💡 使用 /backup_rollback {server_name} <版本号> 回滚'
+            message += f'\n💡 版本号可以是序号(如 1)或提交hash(如 {commits[0].split()[0][:8]})'
+            
+            await backup_list.send(message)
+        else:
+            await backup_list.send(f'❌ 服务器 {server_name} 没有备份历史')
+    
+    except Exception as e:
+        import logging
+        logging.error(f'获取备份历史时出错: {str(e)}', exc_info=True)
+        await backup_list.send(f'❌ 获取备份历史时出错: {str(e)}')
+
+@backup_rollback.handle()
+@check_command_enabled('backup_rollback')
+@permission_required('mc_server')
+async def handle_backup_rollback(event: Event):
+    """回滚到指定备份版本"""
+    user, args, group = get_context(event)
+    
+    if not check_mcsm_config():
+        await backup_rollback.send('❌ MCSM配置不完整，请检查环境变量配置')
+        return
+    
+    if not check_git_backup_config():
+        await backup_rollback.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    if len(args) < 2:
+        await backup_rollback.send('❌ 请提供服务器名和版本号\n用法: /backup_rollback <服务器名> <版本号>\n使用 /backup_list <服务器名> 查看可用版本')
+        return
+    
+    server_name = args[0]
+    version_input = args[1]
+    
+    try:
+        instance_id = get_instance_id(server_name)
+    except ValueError as e:
+        await backup_rollback.send(f'❌ {str(e)}')
+        return
+    
+    try:
+        # 获取备份路径
+        backup_path = get_server_backup_path(server_name)
+        
+        if not os.path.exists(backup_path):
+            await backup_rollback.send(f'❌ 备份目录不存在: {backup_path}')
+            return
+        
+        # 检查是否为Git仓库
+        git_path = os.path.join(backup_path, '.git')
+        if not os.path.exists(git_path):
+            await backup_rollback.send(f'❌ 服务器 {server_name} 还没有Git备份历史')
+            return
+        
+        # 发送开始回滚的消息
+        await backup_rollback.send(f'🔄 开始回滚服务器 {server_name} 到版本 {version_input}...')
+        
+        # 执行回滚操作
+        success, message = await execute_backup_rollback(server_name, instance_id, backup_path, version_input)
+        
+        if success:
+            await backup_rollback.send(f'✅ {message}')
+        else:
+            await backup_rollback.send(f'❌ 回滚失败: {message}')
+    
+    except Exception as e:
+        import logging
+        logging.error(f'回滚服务器 {server_name} 时出错: {str(e)}', exc_info=True)
+        await backup_rollback.send(f'❌ 回滚过程中发生未知错误，请查看日志或联系管理员') 
