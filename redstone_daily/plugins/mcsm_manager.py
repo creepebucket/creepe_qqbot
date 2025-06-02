@@ -28,6 +28,7 @@ add_info('players', '查询所有服务器概览信息\n无需权限\n用法: /p
 add_info('player_list', '查询指定服务器在线玩家名单\n无需权限\n用法: /player_list [服务器名]')
 add_info('server_command', '给服务器发送指令\n需要mc_server特殊权限\n用法: /server_command <服务器名> <指令>')
 add_info('server_backup', 'Git备份服务器存档\n需要mc_server特殊权限\n用法: /server_backup <服务器名> [备份描述]')
+add_info('backup_info', '查看备份配置信息\n需要mc_server特殊权限\n用法: /backup_info [服务器名]')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -43,6 +44,7 @@ players = on_command('players')
 player_list = on_command('player_list')
 server_command = on_command('server_command')
 server_backup = on_command('server_backup')
+backup_info = on_command('backup_info')
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
@@ -185,6 +187,37 @@ async def execute_git_backup(server_name: str, backup_description: str = '') -> 
                 subprocess.run(['git', 'init'], check=True, capture_output=True)
                 subprocess.run(['git', 'config', 'user.name', GIT_BACKUP_CONFIG['git_user_name']], check=True)
                 subprocess.run(['git', 'config', 'user.email', GIT_BACKUP_CONFIG['git_user_email']], check=True)
+                
+                # 创建 .gitignore 文件，忽略一些不需要备份的文件
+                gitignore_content = """# 临时文件
+*.tmp
+*.temp
+*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# 进程锁文件
+*.pid
+*.lock
+"""
+                with open('.gitignore', 'w', encoding='utf-8') as f:
+                    f.write(gitignore_content)
+            
+            # 检查目录中是否有文件（除了.git目录）
+            all_files = []
+            for root, dirs, files in os.walk('.'):
+                # 跳过.git目录
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                for file in files:
+                    if not file.startswith('.git'):
+                        all_files.append(os.path.join(root, file))
+            
+            # 如果目录为空或只有.gitignore，提供提示
+            if not all_files or (len(all_files) == 1 and all_files[0] in ['./.gitignore', '.gitignore']):
+                return False, f'备份目录 {backup_path} 为空或没有需要备份的文件\n请确保：\n1. 服务器文件存在于此目录\n2. 或手动复制服务器文件到此目录\n3. 或重新配置 GIT_BACKUP_PATHS 指向正确的服务器目录'
             
             # 添加所有文件到暂存区
             subprocess.run(['git', 'add', '.'], check=True, capture_output=True)
@@ -192,7 +225,14 @@ async def execute_git_backup(server_name: str, backup_description: str = '') -> 
             # 检查是否有变更
             status_result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
             if not status_result.stdout.strip():
-                return True, '没有检测到变更，无需备份'
+                # 再次检查是否是首次提交
+                try:
+                    subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True)
+                    # 如果能成功执行，说明已有提交，确实没有变更
+                    return True, '没有检测到变更，无需备份'
+                except subprocess.CalledProcessError:
+                    # 如果失败，说明是首次提交，应该继续执行
+                    pass
             
             # 步骤3: 创建提交
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -889,4 +929,122 @@ async def handle_server_backup(event: Event):
     except Exception as e:
         import logging
         logging.error(f'备份服务器 {server_name} 时出错: {str(e)}', exc_info=True)
-        await server_backup.send(f'❌ 备份过程中发生未知错误，请查看日志或联系管理员') 
+        await server_backup.send(f'❌ 备份过程中发生未知错误，请查看日志或联系管理员')
+
+@backup_info.handle()
+@check_command_enabled('backup_info')
+@permission_required('mc_server')
+async def handle_backup_info(event: Event):
+    """查看备份配置信息"""
+    user, args, group = get_context(event)
+    
+    # 检查Git备份配置
+    if not check_git_backup_config():
+        await backup_info.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    try:
+        # 如果指定了服务器名，显示特定服务器的备份信息
+        if args:
+            server_name = args[0]
+            
+            # 验证服务器名是否存在
+            try:
+                get_instance_id(server_name)
+            except ValueError as e:
+                await backup_info.send(f'❌ {str(e)}')
+                return
+            
+            # 获取备份路径
+            try:
+                backup_path = get_server_backup_path(server_name)
+            except ValueError as e:
+                await backup_info.send(f'❌ {str(e)}')
+                return
+            
+            message = f'📁 服务器 {server_name} 备份信息:\n\n'
+            message += f'备份路径: {backup_path}\n'
+            
+            # 检查目录状态
+            import os
+            if os.path.exists(backup_path):
+                message += f'目录状态: ✅ 存在\n'
+                
+                # 检查是否为Git仓库
+                git_path = os.path.join(backup_path, '.git')
+                if os.path.exists(git_path):
+                    message += f'Git仓库: ✅ 已初始化\n'
+                    
+                    # 获取提交数量
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ['git', 'rev-list', '--count', 'HEAD'],
+                            cwd=backup_path,
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            commit_count = int(result.stdout.strip())
+                            message += f'备份次数: {commit_count} 次\n'
+                            
+                            # 获取最后一次备份时间
+                            result = subprocess.run(
+                                ['git', 'log', '-1', '--format=%ci'],
+                                cwd=backup_path,
+                                capture_output=True,
+                                text=True
+                            )
+                            if result.returncode == 0:
+                                last_commit = result.stdout.strip()
+                                message += f'最后备份: {last_commit}\n'
+                        else:
+                            message += f'备份次数: 0 次（未提交）\n'
+                    except Exception:
+                        message += f'备份次数: 无法获取\n'
+                else:
+                    message += f'Git仓库: ❌ 未初始化\n'
+                
+                # 检查文件数量
+                file_count = 0
+                for root, dirs, files in os.walk(backup_path):
+                    if '.git' in dirs:
+                        dirs.remove('.git')
+                    file_count += len(files)
+                
+                message += f'文件数量: {file_count} 个\n'
+                
+                if file_count == 0:
+                    message += f'\n⚠️ 备份目录为空！\n'
+                    message += f'请确保：\n'
+                    message += f'1. 服务器文件存在于备份目录中\n'
+                    message += f'2. 或重新配置备份路径指向服务器实际目录\n'
+                    message += f'3. 或手动复制服务器文件到备份目录'
+                
+            else:
+                message += f'目录状态: ❌ 不存在（将自动创建）\n'
+            
+        else:
+            # 显示总体备份配置
+            message = f'⚙️ Git备份配置信息:\n\n'
+            message += f'功能状态: {"✅ 已启用" if GIT_BACKUP_CONFIG["enabled"] else "❌ 已禁用"}\n'
+            message += f'最大备份数: {GIT_BACKUP_CONFIG["max_backups"]} 个\n'
+            message += f'提交者: {GIT_BACKUP_CONFIG["git_user_name"]} <{GIT_BACKUP_CONFIG["git_user_email"]}>\n\n'
+            
+            message += f'📂 配置的服务器:\n'
+            for server_name in SERVER_INSTANCES.keys():
+                try:
+                    backup_path = get_server_backup_path(server_name)
+                    status = "✅" if os.path.exists(backup_path) else "❌"
+                    message += f'{status} {server_name}: {backup_path}\n'
+                except ValueError:
+                    message += f'❌ {server_name}: 未配置备份路径\n'
+            
+            message += f'\n💡 使用 /backup_info <服务器名> 查看详细信息'
+        
+        await backup_info.send(message)
+        
+    except Exception as e:
+        import logging
+        logging.error(f'获取备份信息时出错: {str(e)}', exc_info=True)
+        await backup_info.send(f'❌ 获取备份信息时出错，请查看日志') 
