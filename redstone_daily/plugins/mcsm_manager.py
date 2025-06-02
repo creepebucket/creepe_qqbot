@@ -32,7 +32,7 @@ add_info('server_backup', 'Git备份服务器存档\n需要mc_server特殊权限
 add_info('backup_info', '查看备份配置信息\n需要mc_server特殊权限\n用法: /backup_info [服务器名]')
 add_info('backup_list', '查看备份历史列表\n需要mc_server特殊权限\n用法: /backup_list <服务器名>')
 add_info('backup_rollback', '回滚到指定备份版本\n需要mc_server特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
-add_info('auto_backup', '管理定时自动备份\n需要mc_server特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔小时]')
+add_info('auto_backup', '管理定时自动备份\n需要mc_server特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -1504,7 +1504,7 @@ class AutoBackupManager:
         return self.collection.find_one({'server_name': server_name}) or {
             'server_name': server_name,
             'enabled': False,
-            'interval_hours': 6,
+            'interval_minutes': 360,  # 默认6小时=360分钟
             'last_backup': None,
             'next_backup': None
         }
@@ -1555,7 +1555,7 @@ class AutoBackupManager:
                 config['last_backup'] = datetime.now().isoformat()
                 # 计算下次备份时间
                 from datetime import timedelta
-                next_backup = datetime.now() + timedelta(hours=config['interval_hours'])
+                next_backup = datetime.now() + timedelta(minutes=config['interval_minutes'])
                 config['next_backup'] = next_backup.isoformat()
                 self.set_server_config(server_name, config)
             
@@ -1582,7 +1582,7 @@ async def backup_scheduler():
             
             for server_config in enabled_servers:
                 server_name = server_config['server_name']
-                interval_hours = server_config.get('interval_hours', 6)
+                interval_minutes = server_config.get('interval_minutes', 360)
                 last_backup = server_config.get('last_backup')
                 
                 # 检查是否需要备份
@@ -1592,7 +1592,7 @@ async def backup_scheduler():
                 else:
                     try:
                         last_backup_time = datetime.fromisoformat(last_backup)
-                        next_backup_time = last_backup_time + timedelta(hours=interval_hours)
+                        next_backup_time = last_backup_time + timedelta(minutes=interval_minutes)
                         if datetime.now() >= next_backup_time:
                             should_backup = True
                     except:
@@ -1606,8 +1606,8 @@ async def backup_scheduler():
         except Exception as e:
             logging.error(f'定时备份调度器出错: {str(e)}')
         
-        # 每10分钟检查一次
-        await asyncio.sleep(600)
+        # 每1分钟检查一次
+        await asyncio.sleep(60)
 
 # 启动调度器
 import asyncio
@@ -1658,7 +1658,7 @@ async def handle_auto_backup(event: Event):
         return
     
     if not args:
-        await auto_backup.send('❌ 参数错误\n用法: /auto_backup <on/off/status> [服务器名] [间隔小时]')
+        await auto_backup.send('❌ 参数错误\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
         return
     
     action = args[0].lower()
@@ -1675,9 +1675,9 @@ async def handle_auto_backup(event: Event):
         for server_name in SERVER_INSTANCES.keys():
             config = auto_backup_manager.get_server_config(server_name)
             status = "✅ 启用" if config['enabled'] else "❌ 禁用"
-            interval = config['interval_hours']
+            interval = config['interval_minutes']
             
-            message += f'🖥️ {server_name}: {status} (间隔: {interval}小时)\n'
+            message += f'🖥️ {server_name}: {status} (间隔: {interval}分钟)\n'
             
             if config['last_backup']:
                 try:
@@ -1699,15 +1699,23 @@ async def handle_auto_backup(event: Event):
             message += '\n'
         
         message += '💡 使用说明:\n'
-        message += '/auto_backup on <服务器名> [间隔小时] - 启用自动备份\n'
+        message += '/auto_backup on <服务器名> [间隔分钟] - 启用自动备份\n'
         message += '/auto_backup off <服务器名> - 禁用自动备份\n'
-        message += '/auto_backup status - 查看状态'
+        message += '/auto_backup status - 查看状态\n\n'
+        message += '⏰ 常用间隔参考:\n'
+        message += '• 5分钟 = 5 (最小值)\n'
+        message += '• 15分钟 = 15\n'
+        message += '• 30分钟 = 30\n'
+        message += '• 1小时 = 60\n'
+        message += '• 2小时 = 120\n'
+        message += '• 6小时 = 360 (默认)\n'
+        message += '• 12小时 = 720'
         
         await auto_backup.send(message)
         return
     
     if len(args) < 2:
-        await auto_backup.send('❌ 参数错误\n用法: /auto_backup <on/off> <服务器名> [间隔小时]')
+        await auto_backup.send('❌ 参数错误\n用法: /auto_backup <on/off> <服务器名> [间隔分钟]')
         return
     
     server_name = args[1]
@@ -1721,24 +1729,24 @@ async def handle_auto_backup(event: Event):
     
     if action == 'on':
         # 启用自动备份
-        interval_hours = 6  # 默认6小时
+        interval_minutes = 360  # 默认6小时=360分钟
         if len(args) > 2:
             try:
-                interval_hours = int(args[2])
-                if interval_hours < 1:
-                    await auto_backup.send('❌ 备份间隔必须大于0小时')
+                interval_minutes = int(args[2])
+                if interval_minutes < 5:
+                    await auto_backup.send('❌ 备份间隔必须大于等于5分钟')
                     return
-                if interval_hours > 168:  # 一周
-                    await auto_backup.send('❌ 备份间隔不能超过168小时(一周)')
+                if interval_minutes > 10080:  # 一周
+                    await auto_backup.send('❌ 备份间隔不能超过10080分钟(一周)')
                     return
             except ValueError:
-                await auto_backup.send('❌ 间隔小时必须是数字')
+                await auto_backup.send('❌ 间隔分钟必须是数字')
                 return
         
         # 保存配置
         config = auto_backup_manager.get_server_config(server_name)
         config['enabled'] = True
-        config['interval_hours'] = interval_hours
+        config['interval_minutes'] = interval_minutes
         auto_backup_manager.set_server_config(server_name, config)
         
         # 确保调度器运行
@@ -1747,7 +1755,7 @@ async def handle_auto_backup(event: Event):
             auto_backup_manager._scheduler_running = True
             auto_backup_manager._scheduler_task = asyncio.create_task(backup_scheduler())
         
-        await auto_backup.send(f'✅ 已启用服务器 {server_name} 的自动备份\n⏰ 备份间隔: {interval_hours}小时\n💡 只在有玩家在线时备份，不会发送QQ消息')
+        await auto_backup.send(f'✅ 已启用服务器 {server_name} 的自动备份\n⏰ 备份间隔: {interval_minutes}分钟\n💡 只在有玩家在线时备份，不会发送QQ消息')
     
     elif action == 'off':
         # 禁用自动备份
