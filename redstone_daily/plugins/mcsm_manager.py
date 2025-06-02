@@ -98,6 +98,8 @@ def check_git_backup_config() -> bool:
 
 def get_server_backup_path(server_name: str) -> str:
     """获取服务器备份路径"""
+    import os
+    
     # 从配置中获取服务器路径映射
     backup_paths = GIT_BACKUP_CONFIG['backup_paths']
     
@@ -106,12 +108,18 @@ def get_server_backup_path(server_name: str) -> str:
         if isinstance(path_config, str) and ':' in path_config:
             name, path = path_config.split(':', 1)
             if name.strip().lower() == server_name.lower():
-                return path.strip()
+                # 规范化路径，处理Windows路径分隔符
+                normalized_path = os.path.normpath(path.strip())
+                return os.path.abspath(normalized_path)
     
     # 如果没有具体配置，使用默认路径
     if backup_paths and isinstance(backup_paths[0], str):
         base_path = backup_paths[0]
-        return f'{base_path}/{server_name}'
+        # 构建服务器特定路径
+        server_path = os.path.join(base_path, server_name)
+        # 规范化路径
+        normalized_path = os.path.normpath(server_path)
+        return os.path.abspath(normalized_path)
     
     raise ValueError(f'未配置服务器 "{server_name}" 的备份路径')
 
@@ -135,9 +143,20 @@ async def execute_git_backup(server_name: str, backup_description: str = '') -> 
         instance_id = get_instance_id(server_name)
         backup_path = get_server_backup_path(server_name)
         
-        # 检查备份路径是否存在
+        # 自动创建备份目录（如果不存在）
+        try:
+            os.makedirs(backup_path, exist_ok=True)
+        except PermissionError:
+            return False, f'无权限创建备份目录: {backup_path}'
+        except OSError as e:
+            return False, f'创建备份目录失败: {backup_path} - {str(e)}'
+        
+        # 验证备份路径是否可用
         if not os.path.exists(backup_path):
-            return False, f'备份路径不存在: {backup_path}'
+            return False, f'备份路径创建失败: {backup_path}'
+        
+        if not os.path.isdir(backup_path):
+            return False, f'备份路径不是有效目录: {backup_path}'
         
         # 步骤1: 发送 save-all 指令保存世界
         save_result = applications.send_command(
