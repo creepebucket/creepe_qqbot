@@ -34,6 +34,7 @@ add_info('backup_list', '查看备份历史列表\n无需权限\n用法: /backup
 add_info('backup_rollback', '回滚到指定备份版本\n需要对应服务器特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
 add_info('auto_backup', '管理定时自动备份\n需要对应服务器特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
 add_info('backup_analyze', '分析备份仓库大小和增长趋势\n无需权限\n用法: /backup_analyze [服务器名]')
+add_info('backup_clean', '手动清理备份仓库Git历史\n需要对应服务器特殊权限\n用法: /backup_clean <服务器名>')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -54,6 +55,7 @@ backup_list = on_command('backup_list')
 backup_rollback = on_command('backup_rollback')
 auto_backup = on_command('auto_backup')
 backup_analyze = on_command('backup_analyze')
+backup_clean = on_command('backup_clean')
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
@@ -324,7 +326,7 @@ Thumbs.db
 async def manage_backup_history(backup_path: str):
     """
     管理备份历史记录，保持指定数量的备份
-    分析仓库大小增长并提供自动合并选项
+    分析仓库大小增长并提供手动清理提示
     
     Args:
         backup_path: 备份路径
@@ -363,7 +365,7 @@ async def manage_backup_history(backup_path: str):
             avg_git_size_per_commit = git_size / effective_commits
             print(f"📈 平均每次备份Git增长：{format_size(avg_git_size_per_commit)} (排除初始提交)")
             
-            # 预测未来大小
+            # 预测节省空间
             if commit_count > max_backups:
                 excess_commits = commit_count - max_backups
                 potential_savings = excess_commits * avg_git_size_per_commit
@@ -372,28 +374,9 @@ async def manage_backup_history(backup_path: str):
         # 当提交数量超过限制时的处理
         if commit_count > max_backups:
             print(f"⚠️ 备份数量已达到 {commit_count} 个，超过限制 {max_backups} 个")
-            
-            # 检查是否启用自动清理
-            auto_cleanup_enabled = get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
-            print(f"🔧 自动清理设置: GIT_BACKUP_AUTO_CLEANUP={get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false')}")
-            print(f"🔧 启用状态: {auto_cleanup_enabled}")
-            
-            if auto_cleanup_enabled:
-                print(f"🔄 开始自动清理备份历史...")
-                success = await safe_cleanup_old_commits(backup_path, commit_count, max_backups)
-                if success:
-                    # 重新检查大小
-                    new_total_size = get_directory_size(backup_path)
-                    new_git_size = get_directory_size(os.path.join(backup_path, '.git'))
-                    savings = total_size - new_total_size
-                    print(f"✅ 清理完成！节省空间：{format_size(savings)}")
-                    print(f"📁 新大小：{format_size(new_total_size)} | Git历史：{format_size(new_git_size)}")
-                else:
-                    print(f"❌ 自动清理失败")
-            else:
-                print(f"💡 建议启用自动清理：设置环境变量 GIT_BACKUP_AUTO_CLEANUP=true")
-                print(f"💡 或手动清理旧备份：/backup_list {os.path.basename(backup_path)}")
-                print(f"💡 或增加限制：调整 GIT_BACKUP_MAX_COUNT 配置")
+            print(f"💡 建议手动清理：/backup_clean {os.path.basename(backup_path)}")
+            print(f"💡 或查看备份历史：/backup_list {os.path.basename(backup_path)}")
+            print(f"💡 或增加限制：调整 GIT_BACKUP_MAX_COUNT 配置")
         else:
             print(f"📊 备份数量正常：{commit_count}/{max_backups}，无需清理")
         
@@ -401,149 +384,6 @@ async def manage_backup_history(backup_path: str):
         # 如果历史管理失败，记录错误但不影响备份主流程
         print(f"⚠️ 备份历史管理出错：{backup_path} - {str(e)}")
         pass
-
-async def safe_cleanup_old_commits(backup_path: str, current_count: int, target_count: int) -> bool:
-    """
-    安全地清理旧提交，使用最简单可靠的方法
-    
-    Args:
-        backup_path: 备份路径
-        current_count: 当前提交数量
-        target_count: 目标提交数量
-        
-    Returns:
-        bool: 是否成功
-    """
-    import subprocess
-    import shutil
-    import time
-    
-    try:
-        commits_to_remove = current_count - target_count
-        if commits_to_remove <= 0:
-            print(f"✅ 无需清理，提交数量在限制范围内")
-            return True
-        
-        print(f"🗑️ 准备删除最老的 {commits_to_remove} 个提交...")
-        print(f"📊 当前: {current_count} 个提交 → 目标: {target_count} 个提交")
-        
-        # 获取当前分支名
-        current_branch_result = subprocess.run([
-            'git', 'branch', '--show-current'
-        ], capture_output=True, text=True, cwd=backup_path)
-        
-        current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else 'main'
-        print(f"🌿 当前分支: {current_branch}")
-        
-        # 方法1：使用orphan分支重建历史（最安全）
-        try:
-            # 获取要保留的提交范围
-            print(f"🔍 获取要保留的提交列表...")
-            keep_commits_result = subprocess.run([
-                'git', 'rev-list', '--reverse', 'HEAD', f'--skip={commits_to_remove}'
-            ], capture_output=True, text=True, cwd=backup_path)
-            
-            if keep_commits_result.returncode != 0:
-                print(f"❌ 获取提交列表失败: {keep_commits_result.stderr.decode() if keep_commits_result.stderr else '未知错误'}")
-                return False
-            
-            if not keep_commits_result.stdout.strip():
-                print(f"❌ 没有找到要保留的提交")
-                return False
-            
-            keep_commits = keep_commits_result.stdout.strip().split('\n')
-            print(f"📋 要保留 {len(keep_commits)} 个提交")
-            
-            if len(keep_commits) == 0:
-                print(f"❌ 保留的提交数量为0，取消清理")
-                return False
-            
-            first_keep_commit = keep_commits[0]
-            print(f"🎯 第一个保留的提交: {first_keep_commit[:8]}")
-            
-            # 创建备份分支
-            backup_branch = f'backup-before-cleanup-{int(time.time())}'
-            print(f"💾 创建备份分支: {backup_branch}")
-            backup_result = subprocess.run(['git', 'branch', backup_branch], cwd=backup_path, capture_output=True)
-            if backup_result.returncode != 0:
-                print(f"❌ 创建备份分支失败: {backup_result.stderr.decode() if backup_result.stderr else '未知错误'}")
-                return False
-            
-            try:
-                # 创建新的孤儿分支
-                print(f"🌱 创建孤儿分支: new-main")
-                orphan_result = subprocess.run(['git', 'checkout', '--orphan', 'new-main'], cwd=backup_path, capture_output=True)
-                if orphan_result.returncode != 0:
-                    print(f"❌ 创建孤儿分支失败: {orphan_result.stderr.decode() if orphan_result.stderr else '未知错误'}")
-                    raise Exception("创建孤儿分支失败")
-                
-                # 重置到第一个要保留的提交
-                print(f"🔄 重置到第一个保留的提交: {first_keep_commit[:8]}")
-                reset_result = subprocess.run(['git', 'reset', '--hard', first_keep_commit], cwd=backup_path, capture_output=True)
-                if reset_result.returncode != 0:
-                    print(f"❌ 重置失败: {reset_result.stderr.decode() if reset_result.stderr else '未知错误'}")
-                    raise Exception("重置到目标提交失败")
-                
-                # 如果有多个提交需要保留，依次应用后续提交
-                if len(keep_commits) > 1:
-                    print(f"🔗 应用后续 {len(keep_commits) - 1} 个提交...")
-                    for i, commit in enumerate(keep_commits[1:], 2):
-                        if commit.strip():
-                            print(f"  📝 应用提交 {i}/{len(keep_commits)}: {commit[:8]}")
-                            # 使用reset而不是merge来避免复杂的合并逻辑
-                            result = subprocess.run(['git', 'reset', '--hard', commit], cwd=backup_path, capture_output=True)
-                            if result.returncode != 0:
-                                print(f"    ⚠️ 应用提交失败，继续下一个...")
-                                continue
-                
-                # 切换回原分支并删除它
-                print(f"🔄 删除原分支 {current_branch}，重命名新分支")
-                subprocess.run(['git', 'branch', '-D', current_branch], cwd=backup_path, capture_output=True)
-                rename_result = subprocess.run(['git', 'branch', '-m', current_branch], cwd=backup_path, capture_output=True)
-                if rename_result.returncode != 0:
-                    print(f"❌ 重命名分支失败: {rename_result.stderr.decode() if rename_result.stderr else '未知错误'}")
-                    raise Exception("重命名分支失败")
-                
-                # 删除备份分支
-                print(f"🗑️ 清理备份分支")
-                subprocess.run(['git', 'branch', '-D', backup_branch], cwd=backup_path, capture_output=True)
-                
-                # 垃圾回收，优化仓库大小
-                print(f"🧹 执行垃圾回收...")
-                gc_result = subprocess.run(['git', 'gc', '--aggressive', '--prune=now'], cwd=backup_path, capture_output=True)
-                if gc_result.returncode != 0:
-                    print(f"⚠️ 垃圾回收警告: {gc_result.stderr.decode() if gc_result.stderr else '可能无影响'}")
-                
-                # 验证结果
-                final_count_result = subprocess.run(['git', 'rev-list', '--count', 'HEAD'], capture_output=True, text=True, cwd=backup_path)
-                if final_count_result.returncode == 0:
-                    final_count = int(final_count_result.stdout.strip())
-                    print(f"✅ 清理完成！提交数量: {current_count} → {final_count}")
-                    if final_count <= target_count:
-                        return True
-                    else:
-                        print(f"⚠️ 清理后提交数量仍超出限制: {final_count} > {target_count}")
-                        return False
-                else:
-                    print(f"⚠️ 无法验证最终提交数量")
-                    return True  # 假设成功
-                
-            except Exception as e:
-                # 恢复到备份状态
-                print(f"⚠️ 清理失败，正在恢复... {str(e)}")
-                subprocess.run(['git', 'checkout', current_branch], cwd=backup_path, capture_output=True)
-                subprocess.run(['git', 'reset', '--hard', backup_branch], cwd=backup_path, capture_output=True)
-                subprocess.run(['git', 'branch', '-D', 'new-main'], cwd=backup_path, capture_output=True)
-                subprocess.run(['git', 'branch', '-D', backup_branch], cwd=backup_path, capture_output=True)
-                return False
-        
-        except Exception as e:
-            print(f"⚠️ 安全清理失败：{str(e)}")
-            return False
-    
-    except Exception as e:
-        print(f"⚠️ 清理过程出错：{str(e)}")
-        return False
 
 async def execute_backup_rollback(server_name: str, instance_id: str, backup_path: str, version_input: str) -> tuple[bool, str]:
     """
@@ -2180,15 +2020,146 @@ async def analyze_single_server(command_handler, server_name: str, backup_path: 
                 potential_savings = 0
             message += f'• ⚠️ 超出限制: {excess} 个提交\n'
             message += f'• 💾 可节省空间: 约 {format_size(potential_savings)}\n'
-            message += f'• 💡 建议启用自动清理: GIT_BACKUP_AUTO_CLEANUP=true\n'
+            message += f'• 💡 建议手动清理: /backup_clean {server_name}\n'
         else:
             message += f'• ✅ 在限制范围内\n'
-        
-        # 自动清理状态
-        auto_cleanup = get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
-        message += f'• 自动清理: {"✅ 已启用" if auto_cleanup else "❌ 已禁用"}\n'
         
         await command_handler.send(message)
         
     except Exception as e:
         await command_handler.send(f'❌ 分析服务器 {server_name} 时出错: {str(e)}')
+
+@backup_clean.handle()
+@check_command_enabled('backup_clean')
+async def handle_backup_clean(event: Event):
+    """手动清理备份仓库Git历史"""
+    user, args, group = get_context(event)
+    
+    if not check_git_backup_config():
+        await backup_clean.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    if not args:
+        await backup_clean.send('❌ 请指定服务器名\n用法: /backup_clean <服务器名>')
+        return
+    
+    server_name = args[0]
+    
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await backup_clean.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+    
+    try:
+        get_instance_id(server_name)
+    except ValueError as e:
+        await backup_clean.send(f'❌ {str(e)}')
+        return
+    
+    try:
+        # 获取备份路径
+        backup_path = get_server_backup_path(server_name)
+        
+        if not os.path.exists(backup_path):
+            await backup_clean.send(f'❌ 备份目录不存在: {backup_path}')
+            return
+        
+        # 检查是否为Git仓库
+        git_path = os.path.join(backup_path, '.git')
+        if not os.path.exists(git_path):
+            await backup_clean.send(f'❌ 服务器 {server_name} 不是Git备份仓库')
+            return
+        
+        # 获取清理前的信息
+        total_size_before = get_directory_size(backup_path)
+        git_size_before = get_directory_size(git_path)
+        
+        import subprocess
+        commit_count_result = subprocess.run(
+            ['git', 'rev-list', '--count', 'HEAD'],
+            capture_output=True,
+            text=True,
+            cwd=backup_path
+        )
+        commit_count = int(commit_count_result.stdout.strip()) if commit_count_result.returncode == 0 else 0
+        
+        # 发送确认消息
+        await backup_clean.send(f'🔄 开始清理服务器 {server_name} 的备份仓库...\n'
+                               f'📊 当前状态：{commit_count} 个提交，Git历史 {format_size(git_size_before)}')
+        
+        # 执行清理
+        success, message = await clean_git_repository(backup_path, server_name)
+        
+        if success:
+            # 获取清理后的信息
+            total_size_after = get_directory_size(backup_path)
+            savings = total_size_before - total_size_after
+            
+            await backup_clean.send(f'✅ {message}\n'
+                                   f'💾 节省空间：{format_size(savings)}\n'
+                                   f'📁 新大小：{format_size(total_size_after)}')
+        else:
+            await backup_clean.send(f'❌ 清理失败: {message}')
+    
+    except Exception as e:
+        import logging
+        logging.error(f'清理备份仓库 {server_name} 时出错: {str(e)}', exc_info=True)
+        await backup_clean.send(f'❌ 清理过程中发生未知错误，请查看日志或联系管理员')
+
+async def clean_git_repository(backup_path: str, server_name: str) -> tuple[bool, str]:
+    """
+    彻底清理Git仓库，删除所有历史记录并重新初始化
+    
+    Args:
+        backup_path: 备份路径
+        server_name: 服务器名称
+        
+    Returns:
+        tuple[bool, str]: (是否成功, 结果消息)
+    """
+    import shutil
+    import subprocess
+    from datetime import datetime
+    
+    try:
+        git_path = os.path.join(backup_path, '.git')
+        
+        # 删除.git目录
+        if os.path.exists(git_path):
+            shutil.rmtree(git_path)
+        
+        # 重新初始化Git仓库
+        subprocess.run(['git', 'init'], cwd=backup_path, check=True, capture_output=True)
+        subprocess.run(['git', 'config', 'user.name', GIT_BACKUP_CONFIG['git_user_name']], cwd=backup_path, check=True)
+        subprocess.run(['git', 'config', 'user.email', GIT_BACKUP_CONFIG['git_user_email']], cwd=backup_path, check=True)
+        
+        # 创建 .gitignore 文件
+        gitignore_content = """# 临时文件
+*.tmp
+*.temp
+*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# 进程锁文件
+*.pid
+*.lock
+"""
+        with open(os.path.join(backup_path, '.gitignore'), 'w', encoding='utf-8') as f:
+            f.write(gitignore_content)
+        
+        # 添加所有文件并创建初始提交
+        subprocess.run(['git', 'add', '.'], cwd=backup_path, check=True, capture_output=True)
+        
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        commit_message = f'[{server_name}] 清理后重新初始化 - {current_time}'
+        subprocess.run(['git', 'commit', '-m', commit_message], cwd=backup_path, check=True, capture_output=True)
+        
+        return True, f'Git仓库已清理并重新初始化，创建新的初始提交'
+        
+    except subprocess.CalledProcessError as e:
+        return False, f'Git操作失败: {e.stderr.decode() if e.stderr else str(e)}'
+    except Exception as e:
+        return False, f'清理过程出错: {str(e)}'
