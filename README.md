@@ -287,6 +287,216 @@ def rate_limit(max_calls: int, window: int):
     return decorator
 ```
 
+#### check_params 装饰器实现
+```python
+def check_params(param_configs: list):
+    """
+    参数检查装饰器
+    
+    实现逻辑:
+    1. 通过get_context()获取用户输入的参数
+    2. 根据配置检查参数类型和必选/可选状态
+    3. 参数不符合要求时自动发送错误提示
+    
+    参数配置格式:
+    [
+        {'str': '参数描述'},           # 必选字符串参数
+        {'int': '参数描述'},           # 必选整数参数  
+        {'float': '参数描述'},         # 必选浮点数参数
+        {'optional_str': '参数描述'},  # 可选字符串参数
+        {'optional_int': '参数描述'},  # 可选整数参数
+        {'optional_float': '参数描述'}, # 可选浮点数参数
+    ]
+    
+    使用示例:
+    @check_params([
+        {'str': '用户名称'},
+        {'int': '积分数量'},
+        {'optional_int': '倍数'}
+    ])
+    """
+    def decorator(func):
+        async def wrapper(event: Event):
+            user, args, group = get_context(event)
+            
+            # 解析参数配置
+            required_params = []
+            optional_params = []
+            
+            for config in param_configs:
+                for param_type, description in config.items():
+                    if param_type.startswith('optional_'):
+                        # 可选参数
+                        actual_type = param_type.replace('optional_', '')
+                        optional_params.append({
+                            'type': actual_type,
+                            'description': description
+                        })
+                    else:
+                        # 必选参数
+                        required_params.append({
+                            'type': param_type,
+                            'description': description
+                        })
+            
+            # 检查必选参数数量
+            total_required = len(required_params)
+            if len(args) < total_required:
+                missing_params = []
+                for i in range(len(args), total_required):
+                    missing_params.append(required_params[i]['description'])
+                
+                error_msg = f'❌ 缺少必要参数: {", ".join(missing_params)}'
+                await func.__self__.send(error_msg)
+                return
+            
+            # 验证参数类型
+            validated_args = []
+            
+            # 验证必选参数
+            for i, param_config in enumerate(required_params):
+                if i >= len(args):
+                    break
+                    
+                arg_value = args[i]
+                param_type = param_config['type']
+                param_desc = param_config['description']
+                
+                try:
+                    validated_value = _validate_param_type(arg_value, param_type, param_desc)
+                    validated_args.append(validated_value)
+                except ValueError as e:
+                    await func.__self__.send(f'❌ {str(e)}')
+                    return
+            
+            # 验证可选参数
+            optional_start_index = total_required
+            for i, param_config in enumerate(optional_params):
+                arg_index = optional_start_index + i
+                if arg_index >= len(args):
+                    break
+                    
+                arg_value = args[arg_index]
+                param_type = param_config['type']
+                param_desc = param_config['description']
+                
+                try:
+                    validated_value = _validate_param_type(arg_value, param_type, param_desc)
+                    validated_args.append(validated_value)
+                except ValueError as e:
+                    await func.__self__.send(f'❌ {str(e)}')
+                    return
+            
+            # 将验证后的参数添加到event对象中，供下游使用
+            event._validated_args = validated_args
+            
+            return await func(event)
+        
+        return wrapper
+    return decorator
+
+def _validate_param_type(value: str, param_type: str, param_desc: str):
+    """
+    验证参数类型
+    
+    Args:
+        value: 参数值
+        param_type: 参数类型 ('str', 'int', 'float')
+        param_desc: 参数描述
+        
+    Returns:
+        转换后的参数值
+        
+    Raises:
+        ValueError: 参数类型验证失败
+    """
+    if param_type == 'str':
+        # 字符串参数直接返回
+        if not value.strip():
+            raise ValueError(f'参数 "{param_desc}" 不能为空')
+        return value.strip()
+    
+    elif param_type == 'int':
+        # 整数参数
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f'参数 "{param_desc}" 必须是整数，当前值: {value}')
+    
+    elif param_type == 'float':
+        # 浮点数参数
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f'参数 "{param_desc}" 必须是数字，当前值: {value}')
+    
+    else:
+        raise ValueError(f'不支持的参数类型: {param_type}')
+
+# 获取验证后的参数的辅助函数
+def get_validated_args(event: Event) -> list:
+    """
+    获取经过check_params装饰器验证的参数
+    
+    Args:
+        event: Event对象
+        
+    Returns:
+        list: 验证后的参数列表
+        
+    Example:
+        @check_params([{'str': '用户名'}, {'int': '积分'}])
+        async def my_command(event: Event):
+            args = get_validated_args(event)
+            username = args[0]  # str类型
+            score = args[1]     # int类型
+    """
+    return getattr(event, '_validated_args', [])
+
+#### check_params 装饰器
+
+**功能**: 自动验证命令参数类型和必选/可选状态
+
+**输入**: 参数配置列表，定义每个参数的类型和描述
+```python
+[
+    {'str': '参数描述'},           # 必选字符串参数
+    {'int': '参数描述'},           # 必选整数参数  
+    {'float': '参数描述'},         # 必选浮点数参数
+    {'optional_str': '参数描述'},  # 可选字符串参数
+    {'optional_int': '参数描述'},  # 可选整数参数
+    {'optional_float': '参数描述'} # 可选浮点数参数
+]
+```
+
+**输出**: 
+- 参数验证失败时自动发送错误提示
+- 验证成功时将转换后的参数存储到 `event._validated_args` 中
+
+**使用示例**:
+```python
+from redstone_daily.plugins.utils import check_params, get_validated_args
+
+@your_command.handle()
+@check_params([
+    {'str': '用户名称'},
+    {'int': '积分数量'},
+    {'optional_int': '倍数'}
+])
+async def handle_command(event: Event):
+    # 获取验证后的参数
+    args = get_validated_args(event)
+    username = args[0]    # str类型，已验证非空
+    score = args[1]       # int类型，已转换
+    multiplier = args[2] if len(args) > 2 else 1  # 可选参数
+    
+    # 业务逻辑处理...
+
+**错误提示示例**:
+- 缺少参数: `❌ 缺少必要参数: 积分数量`
+- 类型错误: `❌ 参数 "积分数量" 必须是整数，当前值: abc`
+- 空字符串: `❌ 参数 "用户名称" 不能为空`
+
 ## 📋 代码规范
 
 ### 插件结构规范
@@ -304,6 +514,7 @@ from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import (
     check_command_enabled, 
+    check_params,
     get_context, 
     get_database,
     permission_required
@@ -315,31 +526,13 @@ add_info('命令名', '命令描述和使用方法')
 # 命令处理器
 plugin_command = on_command('命令名', priority=5, block=True)
 
-# 数据管理器
-class PluginDataManager:
-    """插件数据管理器"""
-    
-    def __init__(self):
-        self.db = get_database('plugin_data')
-        self.collection = self.db.get_db()
-    
-    def get_user_data(self, user_id: int) -> dict:
-        """获取用户数据"""
-        return self.collection.find_one({'user_id': user_id}) or {}
-    
-    def save_user_data(self, user_id: int, data: dict):
-        """保存用户数据"""
-        self.collection.update_one(
-            {'user_id': user_id},
-            {'$set': data},
-            upsert=True
-        )
-
-# 全局数据管理器实例
-data_manager = PluginDataManager()
-
 @plugin_command.handle()
 @check_command_enabled('命令名')
+@check_params([
+    {'str': '用户名称'},
+    {'int': '积分数量'},
+    {'optional_int': '倍数'}
+])
 async def handle_plugin_command(event: Event):
     """
     插件主处理函数
@@ -348,369 +541,37 @@ async def handle_plugin_command(event: Event):
         event: NoneBot事件对象
     """
     try:
+        # 参数已通过验证，正常获取上下文
         user, args, group = get_context(event)
-        
-        # 参数验证
-        if not args:
-            await plugin_command.send('请提供必要参数')
-            return
+        username = args[0]    # str类型，已验证非空
+        score = int(args[1])  # 已验证为整数格式
+        multiplier = int(args[2]) if len(args) > 2 else 1  # 可选参数
         
         # 业务逻辑处理
-        result = await process_business_logic(user, args, group)
+        result = await process_business_logic(username, score, multiplier, user, group)
         
         # 发送结果
         await plugin_command.send(result)
         
-    except ValueError as e:
-        await plugin_command.send(f'参数错误: {str(e)}')
-    except PermissionError:
-        await plugin_command.send('权限不足')
     except Exception as e:
         # 记录错误日志
         import logging
         logging.error(f'插件执行错误: {str(e)}', exc_info=True)
         await plugin_command.send('系统错误，请稍后重试')
 
-async def process_business_logic(user, args, group):
+async def process_business_logic(username: str, score: int, multiplier: int, user, group):
     """
     业务逻辑处理函数
     
     Args:
+        username: 用户名称（已验证的字符串）
+        score: 积分数量（已验证的整数）
+        multiplier: 倍数（已验证的整数）
         user: User对象
-        args: 参数列表
         group: Group对象
         
     Returns:
         str: 处理结果
     """
-    # 具体业务逻辑实现
-    pass
-```
-
-### 命名规范
-
-#### 变量命名
-```python
-# 好的命名
-user_id = 123
-game_score = 100
-is_admin = True
-user_data_list = []
-max_retry_count = 3
-
-# 避免的命名
-uid = 123          # 不够明确
-s = 100           # 无意义
-flag = True       # 不明确
-data = []         # 太泛化
-MAX = 3           # 不明确
-```
-
-#### 函数命名
-```python
-# 好的命名
-def get_user_permission(user_id: int, group_id: int) -> int:
-    """获取用户在群组中的权限"""
-    pass
-
-def validate_game_answer(answer: str, correct_answer: str) -> bool:
-    """验证游戏答案是否正确"""
-    pass
-
-def send_welcome_message(user_id: int):
-    """发送欢迎消息"""
-    pass
-
-# 避免的命名
-def get_perm():        # 缩写不明确
-def check():           # 太泛化
-def do_something():    # 无意义
-```
-
-#### 类命名
-```python
-# 好的命名
-class GameDataManager:
-    """游戏数据管理器"""
-    pass
-
-class UserPermissionChecker:
-    """用户权限检查器"""
-    pass
-
-class MessageFormatter:
-    """消息格式化器"""
-    pass
-```
-
-### 注释规范
-
-#### 函数注释
-```python
-def calculate_game_score(base_score: int, multiplier: float, bonus: int = 0) -> int:
-    """
-    计算游戏得分
-    
-    Args:
-        base_score: 基础分数
-        multiplier: 倍数
-        bonus: 奖励分数，默认为0
-        
-    Returns:
-        int: 计算后的总分数
-        
-    Raises:
-        ValueError: 当base_score为负数时
-        
-    Example:
-        >>> calculate_game_score(100, 1.5, 50)
-        200
-    """
-    if base_score < 0:
-        raise ValueError('基础分数不能为负数')
-    
-    return int(base_score * multiplier) + bonus
-```
-
-#### 类注释
-```python
-class GameSession:
-    """
-    游戏会话管理器
-    
-    负责管理单个游戏会话的状态，包括:
-    - 游戏数据的存储和读取
-    - 游戏状态的更新
-    - 游戏结果的计算
-    
-    Attributes:
-        session_id: 会话ID
-        user_id: 用户ID
-        game_data: 游戏数据字典
-        
-    Example:
-        session = GameSession(123, 456)
-        session.start_game()
-        session.update_score(100)
-    """
-    
-    def __init__(self, session_id: int, user_id: int):
-        """
-        初始化游戏会话
-        
-        Args:
-            session_id: 会话ID
-            user_id: 用户ID
-        """
-        self.session_id = session_id
-        self.user_id = user_id
-        self.game_data = {}
-```
-
-### 错误处理规范
-
-#### 异常处理模式
-```python
-@your_command.handle()
-async def handle_command(event: Event):
-    """命令处理函数"""
-    try:
-        user, args, group = get_context(event)
-        
-        # 参数验证
-        if not args:
-            raise ValueError('缺少必要参数')
-        
-        if not args[0].isdigit():
-            raise ValueError('参数必须是数字')
-        
-        # 权限检查
-        if await user.get_permission(group) < 3:
-            raise PermissionError('权限不足')
-        
-        # 业务逻辑
-        result = await process_logic(args)
-        await your_command.send(f'处理成功: {result}')
-        
-    except ValueError as e:
-        await your_command.send(f'❌ 参数错误: {str(e)}')
-    except PermissionError as e:
-        await your_command.send(f'❌ {str(e)}')
-    except DatabaseError as e:
-        await your_command.send('❌ 数据库错误，请稍后重试')
-        logging.error(f'数据库错误: {str(e)}')
-    except Exception as e:
-        await your_command.send('❌ 系统错误，请联系管理员')
-        logging.error(f'未知错误: {str(e)}', exc_info=True)
-```
-
-#### 自定义异常
-```python
-class PluginError(Exception):
-    """插件基础异常"""
-    pass
-
-class GameError(PluginError):
-    """游戏相关异常"""
-    pass
-
-class UserNotFoundError(PluginError):
-    """用户未找到异常"""
-    pass
-
-class InvalidGameStateError(GameError):
-    """无效游戏状态异常"""
-    pass
-
-# 使用示例
-def start_game(user_id: int):
-    """开始游戏"""
-    user_data = get_user_data(user_id)
-    if not user_data:
-        raise UserNotFoundError(f'用户 {user_id} 不存在')
-    
-    if user_data.get('in_game'):
-        raise InvalidGameStateError('用户已在游戏中')
-```
-
-### 数据库操作规范
-
-#### 查询优化
-```python
-# 好的做法：使用索引字段查询
-def get_user_by_id(user_id: int):
-    """通过用户ID查询（user_id应建立索引）"""
-    return collection.find_one({'user_id': user_id})
-
-# 好的做法：限制返回字段
-def get_user_scores():
-    """只获取需要的字段"""
-    return collection.find({}, {'user_id': 1, 'score': 1, '_id': 0})
-
-# 好的做法：使用批量操作
-def update_multiple_users(updates: list):
-    """批量更新用户数据"""
-    bulk_ops = [
-        UpdateOne({'user_id': update['user_id']}, {'$set': update['data']})
-        for update in updates
-    ]
-    collection.bulk_write(bulk_ops)
-
-# 避免：全表扫描
-def bad_query():
-    """避免这种查询方式"""
-    return collection.find({'nickname': {'$regex': 'test'}})  # 未建索引的模糊查询
-```
-
-#### 数据验证
-```python
-def save_user_data(user_id: int, data: dict):
-    """
-    保存用户数据（带验证）
-    
-    Args:
-        user_id: 用户ID
-        data: 用户数据
-        
-    Raises:
-        ValueError: 数据验证失败
-    """
-    # 数据验证
-    if not isinstance(user_id, int) or user_id <= 0:
-        raise ValueError('用户ID必须是正整数')
-    
-    if not isinstance(data, dict):
-        raise ValueError('数据必须是字典类型')
-    
-    # 字段验证
-    required_fields = ['score', 'level']
-    for field in required_fields:
-        if field not in data:
-            raise ValueError(f'缺少必要字段: {field}')
-    
-    # 数据类型验证
-    if not isinstance(data['score'], int) or data['score'] < 0:
-        raise ValueError('分数必须是非负整数')
-    
-    # 保存数据
-    collection.update_one(
-        {'user_id': user_id},
-        {'$set': {**data, 'updated_at': datetime.now()}},
-        upsert=True
-    )
-```
-
-### 性能优化规范
-
-#### 缓存使用
-```python
-from functools import lru_cache
-import time
-
-class CachedDataManager:
-    """带缓存的数据管理器"""
-    
-    def __init__(self):
-        self.cache = {}
-        self.cache_ttl = 300  # 5分钟缓存
-    
-    def get_user_data(self, user_id: int) -> dict:
-        """获取用户数据（带缓存）"""
-        cache_key = f'user_{user_id}'
-        now = time.time()
-        
-        # 检查缓存
-        if cache_key in self.cache:
-            data, timestamp = self.cache[cache_key]
-            if now - timestamp < self.cache_ttl:
-                return data
-        
-        # 从数据库获取
-        data = collection.find_one({'user_id': user_id}) or {}
-        
-        # 更新缓存
-        self.cache[cache_key] = (data, now)
-        
-        return data
-    
-    def invalidate_cache(self, user_id: int):
-        """清除用户缓存"""
-        cache_key = f'user_{user_id}'
-        self.cache.pop(cache_key, None)
-
-# 使用装饰器缓存
-@lru_cache(maxsize=128)
-def get_game_config(game_type: str) -> dict:
-    """获取游戏配置（内存缓存）"""
-    return collection.find_one({'type': 'config', 'game': game_type}) or {}
-```
-
-#### 异步操作
-```python
-import asyncio
-
-async def batch_process_users(user_ids: list):
-    """批量处理用户数据"""
-    
-    async def process_single_user(user_id: int):
-        """处理单个用户"""
-        try:
-            # 模拟耗时操作
-            await asyncio.sleep(0.1)
-            return f'处理用户 {user_id} 完成'
-        except Exception as e:
-            return f'处理用户 {user_id} 失败: {str(e)}'
-    
-    # 并发处理，限制并发数
-    semaphore = asyncio.Semaphore(10)  # 最多10个并发
-    
-    async def limited_process(user_id: int):
-        async with semaphore:
-            return await process_single_user(user_id)
-    
-    # 执行批量处理
-    tasks = [limited_process(uid) for uid in user_ids]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    return results
-```
+    final_score = score * multiplier
+    return f'用户 {username} 获得 {final_score} 积分'

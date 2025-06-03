@@ -322,6 +322,7 @@ Thumbs.db
 async def manage_backup_history(backup_path: str):
     """
     管理备份历史记录，保持指定数量的备份
+    当提交数量达到 max_backups + 1 时，删除最老的提交
     
     Args:
         backup_path: 备份路径
@@ -344,42 +345,49 @@ async def manage_backup_history(backup_path: str):
         
         commit_count = int(commit_count_result.stdout.strip())
         
-        # 如果提交数量超过限制，进行 rebase 合并
-        if commit_count > max_backups:
-            # 计算需要保留的提交数
-            commits_to_keep = max_backups - 1  # 保留最近的几个提交
-            
-            # 获取要保留的最老提交的 hash
-            oldest_to_keep_result = subprocess.run(
-                ['git', 'rev-list', '--reverse', 'HEAD', f'--max-count={commits_to_keep}'],
-                capture_output=True,
-                text=True,
-                cwd=backup_path
-            )
-            
-            if oldest_to_keep_result.stdout.strip():
-                oldest_hash = oldest_to_keep_result.stdout.strip().split('\n')[0]
+        # 只有当提交数量达到 max_backups + 1 时才进行清理
+        # 这样可以将 11个 提交变为 10个
+        if commit_count == max_backups + 1:
+            try:
+                # 获取最老的提交hash
+                oldest_commit_result = subprocess.run(
+                    ['git', 'rev-list', '--reverse', 'HEAD', '--max-count=1'],
+                    capture_output=True,
+                    text=True,
+                    cwd=backup_path
+                )
                 
-                # 使用 rebase 将旧提交合并为一个
-                # 首先创建一个临时分支
-                subprocess.run(['git', 'branch', 'temp-backup'], cwd=backup_path, capture_output=True)
+                # 获取第二老的提交hash  
+                second_oldest_result = subprocess.run(
+                    ['git', 'rev-list', '--reverse', 'HEAD', '--skip=1', '--max-count=1'],
+                    capture_output=True,
+                    text=True,
+                    cwd=backup_path
+                )
                 
-                try:
-                    # 重置到最老的保留提交
-                    subprocess.run(['git', 'reset', '--soft', f'{oldest_hash}~1'], cwd=backup_path, check=True)
+                if (oldest_commit_result.returncode == 0 and oldest_commit_result.stdout.strip() and
+                    second_oldest_result.returncode == 0 and second_oldest_result.stdout.strip()):
                     
-                    # 创建一个合并提交
+                    oldest_commit = oldest_commit_result.stdout.strip()
+                    second_oldest_commit = second_oldest_result.stdout.strip()
+                    
+                    # 使用 rebase --onto 删除最老的提交
+                    # 将从第二老提交到HEAD的所有提交重新应用到第二老提交的父提交上
+                    # 效果就是删除了最老的提交
                     subprocess.run([
-                        'git', 'commit', '-m', f'[{os.path.basename(backup_path)}] 历史备份合并 - 保留最近{max_backups}个备份'
+                        'git', 'rebase', '--onto', second_oldest_commit, oldest_commit, 'HEAD'
                     ], cwd=backup_path, check=True, capture_output=True)
                     
-                    # 删除临时分支
-                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
-                    
-                except subprocess.CalledProcessError:
-                    # 如果 rebase 失败，恢复到临时分支
-                    subprocess.run(['git', 'reset', '--hard', 'temp-backup'], cwd=backup_path, capture_output=True)
-                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+                    # 修改新的根提交消息，表明这是一个历史清理操作
+                    subprocess.run([
+                        'git', 'commit', '--amend', '-m',
+                        f'[{os.path.basename(backup_path)}] 历史备份清理 - 删除最老备份 ({oldest_commit[:8]})'
+                    ], cwd=backup_path, check=True, capture_output=True)
+                
+            except subprocess.CalledProcessError:
+                # 如果rebase失败，不做任何处理，保持原状
+                # 这样不会影响备份的主要功能
+                pass
         
     except (subprocess.CalledProcessError, ValueError, IndexError):
         # 如果历史管理失败，不影响备份主流程

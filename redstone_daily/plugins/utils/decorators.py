@@ -126,3 +126,155 @@ def check_command_enabled(command: str, send_disabled_message: bool = True):
         return wrapper
 
     return decorator
+
+
+def check_params(param_configs: list):
+    """
+    参数检查装饰器
+    
+    参数配置格式:
+    [
+        {'str': '参数描述'},           # 必选字符串参数
+        {'int': '参数描述'},           # 必选整数参数  
+        {'float': '参数描述'},         # 必选浮点数参数
+        {'optional_str': '参数描述'},  # 可选字符串参数
+        {'optional_int': '参数描述'},  # 可选整数参数
+        {'optional_float': '参数描述'} # 可选浮点数参数
+    ]
+    
+    :param param_configs: 参数配置列表
+    :return: 装饰器
+    """
+    def decorator(func):
+        async def wrapper(event: Event):
+            user, args, group = get_context(event)
+            
+            # 解析参数配置
+            required_params = []
+            optional_params = []
+            
+            for config in param_configs:
+                for param_type, description in config.items():
+                    if param_type.startswith('optional_'):
+                        # 可选参数
+                        actual_type = param_type.replace('optional_', '')
+                        optional_params.append({
+                            'type': actual_type,
+                            'description': description
+                        })
+                    else:
+                        # 必选参数
+                        required_params.append({
+                            'type': param_type,
+                            'description': description
+                        })
+            
+            # 检查必选参数数量
+            total_required = len(required_params)
+            if len(args) < total_required:
+                missing_params = []
+                for i in range(len(args), total_required):
+                    missing_params.append(required_params[i]['description'])
+                
+                error_msg = f'❌ 缺少必要参数: {", ".join(missing_params)}'
+                
+                bot = nonebot.get_bot()
+                if isinstance(event, GroupMessageEvent):
+                    await bot.send_group_msg(group_id=event.group_id, message=error_msg)
+                else:
+                    await user.send(error_msg)
+                return
+            
+            # 验证参数类型 - 仅做验证，不存储结果
+            for i, param_config in enumerate(required_params):
+                if i >= len(args):
+                    break
+                    
+                arg_value = args[i]
+                param_type = param_config['type']
+                param_desc = param_config['description']
+                
+                try:
+                    _validate_param_type(arg_value, param_type, param_desc)
+                except ValueError as e:
+                    error_msg = f'❌ {str(e)}'
+                    
+                    bot = nonebot.get_bot()
+                    if isinstance(event, GroupMessageEvent):
+                        await bot.send_group_msg(group_id=event.group_id, message=error_msg)
+                    else:
+                        await user.send(error_msg)
+                    return
+            
+            # 验证可选参数
+            optional_start_index = total_required
+            for i, param_config in enumerate(optional_params):
+                arg_index = optional_start_index + i
+                if arg_index >= len(args):
+                    break
+                    
+                arg_value = args[arg_index]
+                param_type = param_config['type']
+                param_desc = param_config['description']
+                
+                try:
+                    _validate_param_type(arg_value, param_type, param_desc)
+                except ValueError as e:
+                    error_msg = f'❌ {str(e)}'
+                    
+                    bot = nonebot.get_bot()
+                    if isinstance(event, GroupMessageEvent):
+                        await bot.send_group_msg(group_id=event.group_id, message=error_msg)
+                    else:
+                        await user.send(error_msg)
+                    return
+            
+            # 参数验证通过，执行原函数
+            return await func(event)
+        
+        return wrapper
+    return decorator
+
+
+def _validate_param_type(value: str, param_type: str, param_desc: str):
+    """
+    验证参数类型
+    
+    :param value: 参数值
+    :param param_type: 参数类型 ('str', 'int', 'float')
+    :param param_desc: 参数描述
+    :return: 转换后的参数值
+    :raises ValueError: 参数类型验证失败
+    """
+    if param_type == 'str':
+        # 字符串参数直接返回
+        if not value.strip():
+            raise ValueError(f'参数 "{param_desc}" 不能为空')
+        return value.strip()
+    
+    elif param_type == 'int':
+        # 整数参数
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f'参数 "{param_desc}" 必须是整数，当前值: {value}')
+    
+    elif param_type == 'float':
+        # 浮点数参数
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f'参数 "{param_desc}" 必须是数字，当前值: {value}')
+    
+    else:
+        raise ValueError(f'不支持的参数类型: {param_type}')
+
+
+def get_validated_args(event: Event) -> list:
+    """
+    获取经过check_params装饰器验证的参数
+    
+    :param event: Event对象
+    :return: 验证后的参数列表
+    """
+    return getattr(event, '_validated_args', [])
