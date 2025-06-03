@@ -322,7 +322,7 @@ Thumbs.db
 async def manage_backup_history(backup_path: str):
     """
     管理备份历史记录，保持指定数量的备份
-    当提交数量达到 max_backups + 1 时，合并最早的两个提交
+    当提交数量达到限制时进行提示
     
     Args:
         backup_path: 备份路径
@@ -346,68 +346,14 @@ async def manage_backup_history(backup_path: str):
         commit_count = int(commit_count_result.stdout.strip())
         print(f"🔍 检查备份历史：{backup_path} - 当前 {commit_count} 个提交，限制 {max_backups} 个")
         
-        # 当提交数量超过限制时进行合并，每次合并最早的两个提交
+        # 当提交数量超过限制时进行提示（暂时禁用自动清理以避免Git操作风险）
         if commit_count > max_backups:
-            print(f"📝 开始合并最早的两个备份提交...（当前{commit_count}个，目标{max_backups}个）")
-            
-            try:
-                # 获取第二个提交hash（这将成为新的第一个提交）
-                second_commit_result = subprocess.run(
-                    ['git', 'rev-list', '--reverse', 'HEAD', '--skip=1', '--max-count=1'],
-                    capture_output=True,
-                    text=True,
-                    cwd=backup_path
-                )
-                
-                if second_commit_result.returncode == 0 and second_commit_result.stdout.strip():
-                    second_commit = second_commit_result.stdout.strip()
-                    
-                    # 使用简单的方法：创建新历史
-                    # 1. 创建新的孤儿分支
-                    subprocess.run(['git', 'checkout', '--orphan', 'temp-new-history'], cwd=backup_path, check=True)
-                    
-                    # 2. 重置到第二个提交的状态
-                    subprocess.run(['git', 'reset', '--hard', second_commit], cwd=backup_path, check=True)
-                    
-                    # 3. 修改提交消息为合并消息
-                    subprocess.run([
-                        'git', 'commit', '--amend', '-m',
-                        f'[{os.path.basename(backup_path)}] 历史备份合并 - 合并最早的两个备份'
-                    ], cwd=backup_path, check=True, capture_output=True)
-                    
-                    # 4. 获取第三个提交开始的所有提交
-                    remaining_commits_result = subprocess.run(
-                        ['git', 'rev-list', '--reverse', 'main'],
-                        capture_output=True,
-                        text=True,
-                        cwd=backup_path
-                    )
-                    
-                    if remaining_commits_result.returncode == 0:
-                        all_commits = remaining_commits_result.stdout.strip().split('\n')
-                        
-                        # 跳过前两个提交，cherry-pick剩余的
-                        if len(all_commits) > 2:
-                            for commit in all_commits[2:]:
-                                if commit.strip():
-                                    subprocess.run(['git', 'cherry-pick', commit], cwd=backup_path, check=True, capture_output=True)
-                    
-                    # 5. 删除原分支，重命名新分支
-                    subprocess.run(['git', 'branch', '-D', 'main'], cwd=backup_path, check=True)
-                    subprocess.run(['git', 'branch', '-m', 'main'], cwd=backup_path, check=True)
-                    
-                    print(f"✅ 备份历史合并成功：{backup_path} - 从 {commit_count} 个提交合并为 {commit_count-1} 个")
-                
-            except subprocess.CalledProcessError as e:
-                # 如果合并失败，恢复到原状态
-                print(f"⚠️ 备份历史合并失败：{backup_path} - {str(e)}")
-                try:
-                    subprocess.run(['git', 'checkout', 'main'], cwd=backup_path, capture_output=True)
-                    subprocess.run(['git', 'branch', '-D', 'temp-new-history'], cwd=backup_path, capture_output=True)
-                except:
-                    pass
+            print(f"⚠️ 备份数量已达到 {commit_count} 个，超过限制 {max_backups} 个")
+            print(f"💡 建议手动清理旧备份或增加 GIT_BACKUP_MAX_COUNT 配置")
+            # 注释：可以在这里添加自动清理逻辑，但需要更仔细的测试
+            # 目前为了数据安全，暂时禁用自动清理功能
         else:
-            print(f"📊 备份数量正常：{commit_count}/{max_backups}，无需合并")
+            print(f"📊 备份数量正常：{commit_count}/{max_backups}，无需清理")
         
     except (subprocess.CalledProcessError, ValueError, IndexError) as e:
         # 如果历史管理失败，记录错误但不影响备份主流程
