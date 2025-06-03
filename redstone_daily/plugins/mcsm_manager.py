@@ -374,8 +374,8 @@ async def manage_backup_history(backup_path: str):
             print(f"⚠️ 备份数量已达到 {commit_count} 个，超过限制 {max_backups} 个")
             
             # 检查是否启用自动清理
-            auto_cleanup_enabled = os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
-            print(f"🔧 自动清理设置: GIT_BACKUP_AUTO_CLEANUP={os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false')}")
+            auto_cleanup_enabled = get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
+            print(f"🔧 自动清理设置: GIT_BACKUP_AUTO_CLEANUP={get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false')}")
             print(f"🔧 启用状态: {auto_cleanup_enabled}")
             
             if auto_cleanup_enabled:
@@ -2185,7 +2185,7 @@ async def analyze_single_server(command_handler, server_name: str, backup_path: 
             message += f'• ✅ 在限制范围内\n'
         
         # 自动清理状态
-        auto_cleanup = os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
+        auto_cleanup = get_env_str('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
         message += f'• 自动清理: {"✅ 已启用" if auto_cleanup else "❌ 已禁用"}\n'
         
         await command_handler.send(message)
