@@ -2059,9 +2059,13 @@ async def analyze_single_server(command_handler, server_name: str, backup_path: 
         message += f'📝 提交分析:\n'
         message += f'• 总提交数: {commit_count} 个\n'
         
-        if commit_count > 0:
-            avg_git_per_commit = git_size / commit_count
-            message += f'• 平均每次提交Git增长: {format_size(avg_git_per_commit)}\n'
+        if commit_count > 1:
+            # 计算平均每次提交Git增长（排除第一个提交）
+            effective_commits = commit_count - 1  # 排除第一个初始提交
+            if effective_commits > 0:
+                avg_git_per_commit = git_size / commit_count  # 总体平均
+                effective_avg = git_size / effective_commits if effective_commits > 0 else 0  # 排除初始提交的平均
+                message += f'• 平均每次提交Git增长: {format_size(effective_avg)} (排除初始提交)\n'
             
             # 获取第一次和最后一次提交时间
             try:
@@ -2106,7 +2110,12 @@ async def analyze_single_server(command_handler, server_name: str, backup_path: 
         
         if commit_count > max_backups:
             excess = commit_count - max_backups
-            potential_savings = excess * avg_git_per_commit if commit_count > 0 else 0
+            # 使用排除初始提交的平均值来估算节省空间
+            if commit_count > 1:
+                effective_avg = git_size / (commit_count - 1) if (commit_count - 1) > 0 else 0
+                potential_savings = excess * effective_avg
+            else:
+                potential_savings = 0
             message += f'• ⚠️ 超出限制: {excess} 个提交\n'
             message += f'• 💾 可节省空间: 约 {format_size(potential_savings)}\n'
             message += f'• 💡 建议启用自动清理: GIT_BACKUP_AUTO_CLEANUP=true\n'
@@ -2116,23 +2125,6 @@ async def analyze_single_server(command_handler, server_name: str, backup_path: 
         # 自动清理状态
         auto_cleanup = os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
         message += f'• 自动清理: {"✅ 已启用" if auto_cleanup else "❌ 已禁用"}\n'
-        
-        # 增长预测
-        if commit_count > 5:
-            message += f'\n📈 增长预测:\n'
-            
-            # 预测不同场景下的大小
-            scenarios = [
-                (30, '月'), (90, '季度'), (365, '年')
-            ]
-            
-            for days, period in scenarios:
-                if days > 0 and commit_count > 0:
-                    predicted_commits = commits_per_day * days if 'commits_per_day' in locals() else commit_count + days * 0.5
-                    predicted_git_size = predicted_commits * avg_git_per_commit
-                    predicted_total = working_size + predicted_git_size
-                    
-                    message += f'• {period}后预测: {format_size(predicted_total)} (约{predicted_commits:.0f}个提交)\n'
         
         await command_handler.send(message)
         
