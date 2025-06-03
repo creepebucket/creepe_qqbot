@@ -346,9 +346,9 @@ async def manage_backup_history(backup_path: str):
         commit_count = int(commit_count_result.stdout.strip())
         print(f"🔍 检查备份历史：{backup_path} - 当前 {commit_count} 个提交，限制 {max_backups} 个")
         
-        # 只有当提交数量达到 max_backups + 1 时才进行合并
-        if commit_count == max_backups + 1:
-            print(f"📝 开始合并最早的两个备份提交...")
+        # 当提交数量超过限制时进行合并，每次合并最早的两个提交
+        if commit_count > max_backups:
+            print(f"📝 开始合并最早的两个备份提交...（当前{commit_count}个，目标{max_backups}个）")
             
             try:
                 # 获取第二个提交hash（这将成为新的第一个提交）
