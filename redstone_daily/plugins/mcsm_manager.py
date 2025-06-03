@@ -344,72 +344,74 @@ async def manage_backup_history(backup_path: str):
         )
         
         commit_count = int(commit_count_result.stdout.strip())
+        print(f"🔍 检查备份历史：{backup_path} - 当前 {commit_count} 个提交，限制 {max_backups} 个")
         
         # 只有当提交数量达到 max_backups + 1 时才进行合并
-        # 这样可以将 11个 提交合并为 10个
         if commit_count == max_backups + 1:
-            # 创建临时分支保存当前状态
-            subprocess.run(['git', 'branch', 'temp-backup'], cwd=backup_path, capture_output=True)
+            print(f"📝 开始合并最早的两个备份提交...")
             
             try:
-                # 获取所有提交的hash列表（从最老到最新）
-                all_commits_result = subprocess.run(
-                    ['git', 'rev-list', '--reverse', 'HEAD'],
+                # 获取第二个提交hash（这将成为新的第一个提交）
+                second_commit_result = subprocess.run(
+                    ['git', 'rev-list', '--reverse', 'HEAD', '--skip=1', '--max-count=1'],
                     capture_output=True,
                     text=True,
                     cwd=backup_path
                 )
                 
-                if all_commits_result.returncode == 0 and all_commits_result.stdout.strip():
-                    commits = all_commits_result.stdout.strip().split('\n')
+                if second_commit_result.returncode == 0 and second_commit_result.stdout.strip():
+                    second_commit = second_commit_result.stdout.strip()
                     
-                    if len(commits) >= 2:
-                        # 获取第二个提交的内容（这将是合并后的内容）
-                        second_commit = commits[1]
+                    # 使用简单的方法：创建新历史
+                    # 1. 创建新的孤儿分支
+                    subprocess.run(['git', 'checkout', '--orphan', 'temp-new-history'], cwd=backup_path, check=True)
+                    
+                    # 2. 重置到第二个提交的状态
+                    subprocess.run(['git', 'reset', '--hard', second_commit], cwd=backup_path, check=True)
+                    
+                    # 3. 修改提交消息为合并消息
+                    subprocess.run([
+                        'git', 'commit', '--amend', '-m',
+                        f'[{os.path.basename(backup_path)}] 历史备份合并 - 合并最早的两个备份'
+                    ], cwd=backup_path, check=True, capture_output=True)
+                    
+                    # 4. 获取第三个提交开始的所有提交
+                    remaining_commits_result = subprocess.run(
+                        ['git', 'rev-list', '--reverse', 'main'],
+                        capture_output=True,
+                        text=True,
+                        cwd=backup_path
+                    )
+                    
+                    if remaining_commits_result.returncode == 0:
+                        all_commits = remaining_commits_result.stdout.strip().split('\n')
                         
-                        # 获取第二个提交的消息
-                        second_commit_msg_result = subprocess.run(
-                            ['git', 'log', '-1', '--format=%s', second_commit],
-                            capture_output=True,
-                            text=True,
-                            cwd=backup_path
-                        )
-                        
-                        # 创建一个新的孤儿分支
-                        subprocess.run(['git', 'checkout', '--orphan', 'new-history'], cwd=backup_path, check=True)
-                        
-                        # 重置到第二个提交的状态（包含前两个提交的所有更改）
-                        subprocess.run(['git', 'reset', '--hard', second_commit], cwd=backup_path, check=True)
-                        
-                        # 创建合并提交，使用更合适的消息
-                        original_msg = second_commit_msg_result.stdout.strip() if second_commit_msg_result.returncode == 0 else "早期备份"
-                        merged_commit_msg = f'[{os.path.basename(backup_path)}] 历史备份合并 - 合并最早的两个备份'
-                        
-                        subprocess.run([
-                            'git', 'commit', '--amend', '-m', merged_commit_msg
-                        ], cwd=backup_path, check=True, capture_output=True)
-                        
-                        # 现在cherry-pick剩余的提交（从第三个开始）
-                        for commit in commits[2:]:
-                            if commit.strip():
-                                subprocess.run(['git', 'cherry-pick', commit], cwd=backup_path, check=True, capture_output=True)
-                        
-                        # 切换回主分支并删除临时分支
-                        subprocess.run(['git', 'branch', '-M', 'main'], cwd=backup_path, check=True)
-                        subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+                        # 跳过前两个提交，cherry-pick剩余的
+                        if len(all_commits) > 2:
+                            for commit in all_commits[2:]:
+                                if commit.strip():
+                                    subprocess.run(['git', 'cherry-pick', commit], cwd=backup_path, check=True, capture_output=True)
+                    
+                    # 5. 删除原分支，重命名新分支
+                    subprocess.run(['git', 'branch', '-D', 'main'], cwd=backup_path, check=True)
+                    subprocess.run(['git', 'branch', '-m', 'main'], cwd=backup_path, check=True)
+                    
+                    print(f"✅ 备份历史合并成功：{backup_path} - 从 {commit_count} 个提交合并为 {commit_count-1} 个")
                 
-            except subprocess.CalledProcessError:
-                # 如果操作失败，恢复到原状态
+            except subprocess.CalledProcessError as e:
+                # 如果合并失败，恢复到原状态
+                print(f"⚠️ 备份历史合并失败：{backup_path} - {str(e)}")
                 try:
-                    subprocess.run(['git', 'checkout', 'temp-backup'], cwd=backup_path, capture_output=True)
-                    subprocess.run(['git', 'branch', '-D', 'new-history'], cwd=backup_path, capture_output=True)
-                    subprocess.run(['git', 'branch', '-M', 'main'], cwd=backup_path, capture_output=True)
-                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'checkout', 'main'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', 'temp-new-history'], cwd=backup_path, capture_output=True)
                 except:
                     pass
+        else:
+            print(f"📊 备份数量正常：{commit_count}/{max_backups}，无需合并")
         
-    except (subprocess.CalledProcessError, ValueError, IndexError):
-        # 如果历史管理失败，不影响备份主流程
+    except (subprocess.CalledProcessError, ValueError, IndexError) as e:
+        # 如果历史管理失败，记录错误但不影响备份主流程
+        print(f"⚠️ 备份历史管理出错：{backup_path} - {str(e)}")
         pass
 
 async def execute_backup_rollback(server_name: str, instance_id: str, backup_path: str, version_input: str) -> tuple[bool, str]:
