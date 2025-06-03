@@ -198,6 +198,8 @@ async def handle_increase(event: GroupIncreaseNoticeEvent):
         'reminded': False
     }
 
+    print(code)
+
     art = generate_art(code)
     message = Message([
         MessageSegment.at(user_id),
