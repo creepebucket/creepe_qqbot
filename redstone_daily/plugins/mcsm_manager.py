@@ -33,6 +33,7 @@ add_info('backup_info', '查看备份配置信息\n无需权限\n用法: /backup
 add_info('backup_list', '查看备份历史列表\n无需权限\n用法: /backup_list <服务器名>')
 add_info('backup_rollback', '回滚到指定备份版本\n需要对应服务器特殊权限\n用法: /backup_rollback <服务器名> <版本号>')
 add_info('auto_backup', '管理定时自动备份\n需要对应服务器特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
+add_info('backup_analyze', '分析备份仓库大小和增长趋势\n无需权限\n用法: /backup_analyze [服务器名]')
 
 # 命令处理器
 mcsm_status = on_command('mcsm_status')
@@ -52,6 +53,7 @@ backup_info = on_command('backup_info')
 backup_list = on_command('backup_list')
 backup_rollback = on_command('backup_rollback')
 auto_backup = on_command('auto_backup')
+backup_analyze = on_command('backup_analyze')
 
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
@@ -322,7 +324,7 @@ Thumbs.db
 async def manage_backup_history(backup_path: str):
     """
     管理备份历史记录，保持指定数量的备份
-    当提交数量达到限制时进行提示
+    分析仓库大小增长并提供自动合并选项
     
     Args:
         backup_path: 备份路径
@@ -344,14 +346,48 @@ async def manage_backup_history(backup_path: str):
         )
         
         commit_count = int(commit_count_result.stdout.strip())
-        print(f"🔍 检查备份历史：{backup_path} - 当前 {commit_count} 个提交，限制 {max_backups} 个")
         
-        # 当提交数量超过限制时进行提示（暂时禁用自动清理以避免Git操作风险）
+        # 分析仓库大小
+        total_size = get_directory_size(backup_path)
+        git_size = get_directory_size(os.path.join(backup_path, '.git'))
+        working_size = total_size - git_size
+        
+        print(f"🔍 检查备份历史：{backup_path}")
+        print(f"📊 提交数量：{commit_count} 个（限制：{max_backups} 个）")
+        print(f"📁 总大小：{format_size(total_size)} | Git历史：{format_size(git_size)} | 工作目录：{format_size(working_size)}")
+        
+        # 分析增长趋势
+        if commit_count > 5:
+            avg_git_size_per_commit = git_size / commit_count
+            print(f"📈 平均每次备份Git增长：{format_size(avg_git_size_per_commit)}")
+            
+            # 预测未来大小
+            if commit_count > max_backups:
+                excess_commits = commit_count - max_backups
+                potential_savings = excess_commits * avg_git_size_per_commit
+                print(f"💾 删除 {excess_commits} 个旧备份可节省约：{format_size(potential_savings)}")
+        
+        # 当提交数量超过限制时的处理
         if commit_count > max_backups:
             print(f"⚠️ 备份数量已达到 {commit_count} 个，超过限制 {max_backups} 个")
-            print(f"💡 建议手动清理旧备份或增加 GIT_BACKUP_MAX_COUNT 配置")
-            # 注释：可以在这里添加自动清理逻辑，但需要更仔细的测试
-            # 目前为了数据安全，暂时禁用自动清理功能
+            
+            # 检查是否启用自动清理
+            auto_cleanup_enabled = os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
+            
+            if auto_cleanup_enabled:
+                print(f"🔄 开始自动清理备份历史...")
+                success = await safe_cleanup_old_commits(backup_path, commit_count, max_backups)
+                if success:
+                    # 重新检查大小
+                    new_total_size = get_directory_size(backup_path)
+                    new_git_size = get_directory_size(os.path.join(backup_path, '.git'))
+                    savings = total_size - new_total_size
+                    print(f"✅ 清理完成！节省空间：{format_size(savings)}")
+                    print(f"📁 新大小：{format_size(new_total_size)} | Git历史：{format_size(new_git_size)}")
+            else:
+                print(f"💡 建议启用自动清理：设置环境变量 GIT_BACKUP_AUTO_CLEANUP=true")
+                print(f"💡 或手动清理旧备份：/backup_list {os.path.basename(backup_path)}")
+                print(f"💡 或增加限制：调整 GIT_BACKUP_MAX_COUNT 配置")
         else:
             print(f"📊 备份数量正常：{commit_count}/{max_backups}，无需清理")
         
@@ -359,6 +395,93 @@ async def manage_backup_history(backup_path: str):
         # 如果历史管理失败，记录错误但不影响备份主流程
         print(f"⚠️ 备份历史管理出错：{backup_path} - {str(e)}")
         pass
+
+async def safe_cleanup_old_commits(backup_path: str, current_count: int, target_count: int) -> bool:
+    """
+    安全地清理旧提交，使用最简单可靠的方法
+    
+    Args:
+        backup_path: 备份路径
+        current_count: 当前提交数量
+        target_count: 目标提交数量
+        
+    Returns:
+        bool: 是否成功
+    """
+    import subprocess
+    import shutil
+    import time
+    
+    try:
+        commits_to_remove = current_count - target_count
+        if commits_to_remove <= 0:
+            return True
+        
+        print(f"🗑️ 准备删除最老的 {commits_to_remove} 个提交...")
+        
+        # 方法1：使用orphan分支重建历史（最安全）
+        try:
+            # 获取要保留的提交范围
+            keep_commits_result = subprocess.run([
+                'git', 'rev-list', '--reverse', 'HEAD', f'--skip={commits_to_remove}'
+            ], capture_output=True, text=True, cwd=backup_path)
+            
+            if keep_commits_result.returncode == 0 and keep_commits_result.stdout.strip():
+                keep_commits = keep_commits_result.stdout.strip().split('\n')
+                first_keep_commit = keep_commits[0]
+                
+                # 创建备份
+                backup_branch = f'backup-before-cleanup-{int(time.time())}'
+                subprocess.run(['git', 'branch', backup_branch], cwd=backup_path, check=True)
+                
+                try:
+                    # 创建新的孤儿分支
+                    subprocess.run(['git', 'checkout', '--orphan', 'new-main'], cwd=backup_path, check=True)
+                    
+                    # 重置到第一个要保留的提交
+                    subprocess.run(['git', 'reset', '--hard', first_keep_commit], cwd=backup_path, check=True)
+                    
+                    # 依次应用后续提交
+                    for commit in keep_commits[1:]:
+                        if commit.strip():
+                            # 使用merge而不是cherry-pick来避免冲突
+                            result = subprocess.run([
+                                'git', 'merge', '--no-ff', '--no-edit', commit
+                            ], cwd=backup_path, capture_output=True)
+                            
+                            if result.returncode != 0:
+                                # 如果merge失败，尝试reset
+                                subprocess.run(['git', 'reset', '--hard', commit], cwd=backup_path, capture_output=True)
+                    
+                    # 删除原main分支，重命名新分支
+                    subprocess.run(['git', 'branch', '-D', 'main'], cwd=backup_path, check=True)
+                    subprocess.run(['git', 'branch', '-m', 'main'], cwd=backup_path, check=True)
+                    
+                    # 删除备份分支
+                    subprocess.run(['git', 'branch', '-D', backup_branch], cwd=backup_path, capture_output=True)
+                    
+                    # 垃圾回收，优化仓库大小
+                    subprocess.run(['git', 'gc', '--aggressive', '--prune=now'], cwd=backup_path, capture_output=True)
+                    
+                    print(f"✅ 成功删除 {commits_to_remove} 个旧提交")
+                    return True
+                    
+                except Exception as e:
+                    # 恢复到备份状态
+                    print(f"⚠️ 清理失败，正在恢复... {str(e)}")
+                    subprocess.run(['git', 'checkout', 'main'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'reset', '--hard', backup_branch], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', 'new-main'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', backup_branch], cwd=backup_path, capture_output=True)
+                    return False
+        
+        except Exception as e:
+            print(f"⚠️ 安全清理失败：{str(e)}")
+            return False
+    
+    except Exception as e:
+        print(f"⚠️ 清理过程出错：{str(e)}")
+        return False
 
 async def execute_backup_rollback(server_name: str, instance_id: str, backup_path: str, version_input: str) -> tuple[bool, str]:
     """
@@ -1826,3 +1949,192 @@ async def handle_auto_backup(event: Event):
     
     else:
         await auto_backup.send('❌ 无效操作，请使用 on、off 或 status')
+
+@backup_analyze.handle()
+@check_command_enabled('backup_analyze')
+async def handle_backup_analyze(event: Event):
+    """分析备份仓库大小和增长趋势"""
+    user, args, group = get_context(event)
+    
+    if not check_git_backup_config():
+        await backup_analyze.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+    
+    # 如果指定了服务器名，分析特定服务器
+    if args:
+        server_name = args[0]
+        
+        try:
+            get_instance_id(server_name)
+        except ValueError as e:
+            await backup_analyze.send(f'❌ {str(e)}')
+            return
+        
+        try:
+            backup_path = get_server_backup_path(server_name)
+        except ValueError as e:
+            await backup_analyze.send(f'❌ {str(e)}')
+            return
+        
+        if not os.path.exists(backup_path):
+            await backup_analyze.send(f'❌ 备份目录不存在: {backup_path}')
+            return
+        
+        # 分析单个服务器
+        await analyze_single_server(backup_analyze, server_name, backup_path)
+    
+    else:
+        # 分析所有服务器
+        message = '📊 所有服务器备份分析:\n\n'
+        total_size = 0
+        total_git_size = 0
+        total_commits = 0
+        
+        for server_name in SERVER_INSTANCES.keys():
+            try:
+                backup_path = get_server_backup_path(server_name)
+                if os.path.exists(backup_path):
+                    # 快速分析
+                    size = get_directory_size(backup_path)
+                    git_size = get_directory_size(os.path.join(backup_path, '.git'))
+                    
+                    # 获取提交数量
+                    import subprocess
+                    commit_count_result = subprocess.run(
+                        ['git', 'rev-list', '--count', 'HEAD'],
+                        capture_output=True,
+                        text=True,
+                        cwd=backup_path
+                    )
+                    commits = int(commit_count_result.stdout.strip()) if commit_count_result.returncode == 0 else 0
+                    
+                    total_size += size
+                    total_git_size += git_size
+                    total_commits += commits
+                    
+                    message += f'🖥️ {server_name}:\n'
+                    message += f'   📁 总大小: {format_size(size)}\n'
+                    message += f'   📝 提交数: {commits} 个\n'
+                    message += f'   💾 Git历史: {format_size(git_size)}\n\n'
+                else:
+                    message += f'🖥️ {server_name}: ❌ 无备份\n\n'
+            except Exception as e:
+                message += f'🖥️ {server_name}: ❌ 分析失败 - {str(e)}\n\n'
+        
+        message += f'📈 总计统计:\n'
+        message += f'总大小: {format_size(total_size)}\n'
+        message += f'Git历史: {format_size(total_git_size)}\n'
+        message += f'总提交数: {total_commits} 个\n\n'
+        message += f'💡 使用 /backup_analyze <服务器名> 查看详细分析'
+        
+        await backup_analyze.send(message)
+
+async def analyze_single_server(command_handler, server_name: str, backup_path: str):
+    """分析单个服务器的备份情况"""
+    import subprocess
+    import os
+    from datetime import datetime, timedelta
+    
+    try:
+        # 基本信息
+        total_size = get_directory_size(backup_path)
+        git_size = get_directory_size(os.path.join(backup_path, '.git'))
+        working_size = total_size - git_size
+        
+        # 获取提交信息
+        commit_count_result = subprocess.run(
+            ['git', 'rev-list', '--count', 'HEAD'],
+            capture_output=True,
+            text=True,
+            cwd=backup_path
+        )
+        commit_count = int(commit_count_result.stdout.strip()) if commit_count_result.returncode == 0 else 0
+        
+        message = f'📊 服务器 {server_name} 备份分析\n\n'
+        message += f'📁 存储分析:\n'
+        message += f'• 总大小: {format_size(total_size)}\n'
+        message += f'• Git历史: {format_size(git_size)} ({git_size/total_size*100:.1f}%)\n'
+        message += f'• 工作目录: {format_size(working_size)} ({working_size/total_size*100:.1f}%)\n\n'
+        
+        message += f'📝 提交分析:\n'
+        message += f'• 总提交数: {commit_count} 个\n'
+        
+        if commit_count > 0:
+            avg_git_per_commit = git_size / commit_count
+            message += f'• 平均每次提交Git增长: {format_size(avg_git_per_commit)}\n'
+            
+            # 获取第一次和最后一次提交时间
+            try:
+                first_commit_result = subprocess.run(
+                    ['git', 'log', '--reverse', '--format=%ci', '--max-count=1'],
+                    capture_output=True,
+                    text=True,
+                    cwd=backup_path
+                )
+                last_commit_result = subprocess.run(
+                    ['git', 'log', '--format=%ci', '--max-count=1'],
+                    capture_output=True,
+                    text=True,
+                    cwd=backup_path
+                )
+                
+                if first_commit_result.returncode == 0 and last_commit_result.returncode == 0:
+                    first_time_str = first_commit_result.stdout.strip()
+                    last_time_str = last_commit_result.stdout.strip()
+                    
+                    # 解析时间（ISO格式）
+                    first_time = datetime.fromisoformat(first_time_str.replace(' +0800', ''))
+                    last_time = datetime.fromisoformat(last_time_str.replace(' +0800', ''))
+                    
+                    duration = last_time - first_time
+                    days = duration.days
+                    
+                    if days > 0:
+                        commits_per_day = commit_count / days
+                        git_growth_per_day = git_size / days
+                        
+                        message += f'• 备份历史跨度: {days} 天\n'
+                        message += f'• 平均每天提交: {commits_per_day:.1f} 次\n'
+                        message += f'• 平均每天Git增长: {format_size(git_growth_per_day)}\n'
+            except Exception:
+                pass
+        
+        # 配置检查
+        max_backups = GIT_BACKUP_CONFIG['max_backups']
+        message += f'\n⚙️ 配置状态:\n'
+        message += f'• 备份限制: {max_backups} 个\n'
+        
+        if commit_count > max_backups:
+            excess = commit_count - max_backups
+            potential_savings = excess * avg_git_per_commit if commit_count > 0 else 0
+            message += f'• ⚠️ 超出限制: {excess} 个提交\n'
+            message += f'• 💾 可节省空间: 约 {format_size(potential_savings)}\n'
+            message += f'• 💡 建议启用自动清理: GIT_BACKUP_AUTO_CLEANUP=true\n'
+        else:
+            message += f'• ✅ 在限制范围内\n'
+        
+        # 自动清理状态
+        auto_cleanup = os.environ.get('GIT_BACKUP_AUTO_CLEANUP', 'false').lower() == 'true'
+        message += f'• 自动清理: {"✅ 已启用" if auto_cleanup else "❌ 已禁用"}\n'
+        
+        # 增长预测
+        if commit_count > 5:
+            message += f'\n📈 增长预测:\n'
+            
+            # 预测不同场景下的大小
+            scenarios = [
+                (30, '月'), (90, '季度'), (365, '年')
+            ]
+            
+            for days, period in scenarios:
+                if days > 0 and commit_count > 0:
+                    predicted_commits = commits_per_day * days if 'commits_per_day' in locals() else commit_count + days * 0.5
+                    predicted_git_size = predicted_commits * avg_git_per_commit
+                    predicted_total = working_size + predicted_git_size
+                    
+                    message += f'• {period}后预测: {format_size(predicted_total)} (约{predicted_commits:.0f}个提交)\n'
+        
+        await command_handler.send(message)
+        
+    except Exception as e:
+        await command_handler.send(f'❌ 分析服务器 {server_name} 时出错: {str(e)}')
