@@ -322,7 +322,7 @@ Thumbs.db
 async def manage_backup_history(backup_path: str):
     """
     管理备份历史记录，保持指定数量的备份
-    当提交数量达到 max_backups + 1 时，删除最老的提交
+    当提交数量达到 max_backups + 1 时，合并最早的两个提交
     
     Args:
         backup_path: 备份路径
@@ -345,49 +345,68 @@ async def manage_backup_history(backup_path: str):
         
         commit_count = int(commit_count_result.stdout.strip())
         
-        # 只有当提交数量达到 max_backups + 1 时才进行清理
-        # 这样可以将 11个 提交变为 10个
+        # 只有当提交数量达到 max_backups + 1 时才进行合并
+        # 这样可以将 11个 提交合并为 10个
         if commit_count == max_backups + 1:
+            # 创建临时分支保存当前状态
+            subprocess.run(['git', 'branch', 'temp-backup'], cwd=backup_path, capture_output=True)
+            
             try:
-                # 获取最老的提交hash
-                oldest_commit_result = subprocess.run(
-                    ['git', 'rev-list', '--reverse', 'HEAD', '--max-count=1'],
+                # 获取所有提交的hash列表（从最老到最新）
+                all_commits_result = subprocess.run(
+                    ['git', 'rev-list', '--reverse', 'HEAD'],
                     capture_output=True,
                     text=True,
                     cwd=backup_path
                 )
                 
-                # 获取第二老的提交hash  
-                second_oldest_result = subprocess.run(
-                    ['git', 'rev-list', '--reverse', 'HEAD', '--skip=1', '--max-count=1'],
-                    capture_output=True,
-                    text=True,
-                    cwd=backup_path
-                )
-                
-                if (oldest_commit_result.returncode == 0 and oldest_commit_result.stdout.strip() and
-                    second_oldest_result.returncode == 0 and second_oldest_result.stdout.strip()):
+                if all_commits_result.returncode == 0 and all_commits_result.stdout.strip():
+                    commits = all_commits_result.stdout.strip().split('\n')
                     
-                    oldest_commit = oldest_commit_result.stdout.strip()
-                    second_oldest_commit = second_oldest_result.stdout.strip()
-                    
-                    # 使用 rebase --onto 删除最老的提交
-                    # 将从第二老提交到HEAD的所有提交重新应用到第二老提交的父提交上
-                    # 效果就是删除了最老的提交
-                    subprocess.run([
-                        'git', 'rebase', '--onto', second_oldest_commit, oldest_commit, 'HEAD'
-                    ], cwd=backup_path, check=True, capture_output=True)
-                    
-                    # 修改新的根提交消息，表明这是一个历史清理操作
-                    subprocess.run([
-                        'git', 'commit', '--amend', '-m',
-                        f'[{os.path.basename(backup_path)}] 历史备份清理 - 删除最老备份 ({oldest_commit[:8]})'
-                    ], cwd=backup_path, check=True, capture_output=True)
+                    if len(commits) >= 2:
+                        # 获取第二个提交的内容（这将是合并后的内容）
+                        second_commit = commits[1]
+                        
+                        # 获取第二个提交的消息
+                        second_commit_msg_result = subprocess.run(
+                            ['git', 'log', '-1', '--format=%s', second_commit],
+                            capture_output=True,
+                            text=True,
+                            cwd=backup_path
+                        )
+                        
+                        # 创建一个新的孤儿分支
+                        subprocess.run(['git', 'checkout', '--orphan', 'new-history'], cwd=backup_path, check=True)
+                        
+                        # 重置到第二个提交的状态（包含前两个提交的所有更改）
+                        subprocess.run(['git', 'reset', '--hard', second_commit], cwd=backup_path, check=True)
+                        
+                        # 创建合并提交，使用更合适的消息
+                        original_msg = second_commit_msg_result.stdout.strip() if second_commit_msg_result.returncode == 0 else "早期备份"
+                        merged_commit_msg = f'[{os.path.basename(backup_path)}] 历史备份合并 - 合并最早的两个备份'
+                        
+                        subprocess.run([
+                            'git', 'commit', '--amend', '-m', merged_commit_msg
+                        ], cwd=backup_path, check=True, capture_output=True)
+                        
+                        # 现在cherry-pick剩余的提交（从第三个开始）
+                        for commit in commits[2:]:
+                            if commit.strip():
+                                subprocess.run(['git', 'cherry-pick', commit], cwd=backup_path, check=True, capture_output=True)
+                        
+                        # 切换回主分支并删除临时分支
+                        subprocess.run(['git', 'branch', '-M', 'main'], cwd=backup_path, check=True)
+                        subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
                 
             except subprocess.CalledProcessError:
-                # 如果rebase失败，不做任何处理，保持原状
-                # 这样不会影响备份的主要功能
-                pass
+                # 如果操作失败，恢复到原状态
+                try:
+                    subprocess.run(['git', 'checkout', 'temp-backup'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', 'new-history'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-M', 'main'], cwd=backup_path, capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', 'temp-backup'], cwd=backup_path, capture_output=True)
+                except:
+                    pass
         
     except (subprocess.CalledProcessError, ValueError, IndexError):
         # 如果历史管理失败，不影响备份主流程
