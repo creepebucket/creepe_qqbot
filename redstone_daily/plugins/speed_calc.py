@@ -154,7 +154,7 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
                 for expr in generate_all_expressions(a, b, c, d, op1, op2, op3):
                     try:
                         result = eval(expr)
-                        if (result > 0 and result <= 10000 and not math.isinf(result) and 
+                        if (result > 0 and result <= 100 and not math.isinf(result) and
                             abs(result - round(result)) < 1e-6):
                             result = int(round(result))
                             if result not in all_results:
