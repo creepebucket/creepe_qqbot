@@ -72,20 +72,11 @@ async def handle_24(event: Event):
         collection.update_one(query, {'$set': {'answer_viewed': True}})
         
         solutions = solve_24_multiples(current_problem['numbers'])
-        target = current_problem.get('target', 24)
-        valid_solutions = []
-        for sol in solutions:
-            try:
-                result = eval(sol)
-                if abs(result - target) < 1e-6:
-                    valid_solutions.append(sol)
-            except:
-                continue
         
-        if valid_solutions:
-            sample_solutions = random.sample(valid_solutions, min(3, len(valid_solutions)))
+        if solutions:
+            sample_solutions = random.sample(solutions, min(3, len(solutions)))
             answer_text = f"当前题目的答案示例：\n" + "\n".join(sample_solutions)
-            answer_text += f"\n\n总共有 {len(valid_solutions)} 种解法"
+            answer_text += f"\n\n总共有 {len(solutions)} 种解法"
         else:
             answer_text = "未找到解法"
             
@@ -98,8 +89,7 @@ async def handle_24(event: Event):
         return
     
     expression = arg_list[0]
-    target = current_problem.get('target', 24)
-    is_valid, message, result = validate_expression_multiples(expression, current_problem['numbers'], target)
+    is_valid, message, result = validate_expression_multiples(expression, current_problem['numbers'])
     
     if is_valid:
         # 计算积分（如果未查看答案且未使用solve24作弊）
@@ -140,53 +130,33 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
         
         difficulty_config = DIFFICULTY_CONFIG[difficulty]
         if difficulty_config['ratio_min'] <= solution_ratio <= difficulty_config['ratio_max']:
-            # 随机选择目标数（24的倍数）
-            valid_targets = set()
-            for sol in solutions:
-                try:
-                    result = eval(sol)
-                    if result > 0 and math.isclose((result / 24) % 1, 0, abs_tol=1e-6):
-                        valid_targets.add(int(round(result)))
-                except:
-                    continue
+            update_data = {
+                'numbers': numbers,
+                'difficulty': difficulty,
+                'solution_count': len(solutions),
+                'solution_ratio': solution_ratio,
+                'start_time': time.time(),
+                'answer_viewed': False,
+                'solve_used': False,
+                'user_id': user.id
+            }
+            collection.update_one(query, {'$set': update_data}, upsert=True)
             
-            if valid_targets:
-                # 优先选择24，如果没有24则选择其他24的倍数
-                if 24 in valid_targets:
-                    target = 24
-                else:
-                    target = random.choice(list(valid_targets))
-                
-                update_data = {
-                    'numbers': numbers,
-                    'target': target,
-                    'difficulty': difficulty,
-                    'solution_count': len(solutions),
-                    'solution_ratio': solution_ratio,
-                    'start_time': time.time(),
-                    'answer_viewed': False,
-                    'solve_used': False,
-                    'user_id': user.id
-                }
-                collection.update_one(query, {'$set': update_data}, upsert=True)
-                
-                await game_24.send(
-                    f"【{difficulty}难度】新题目：\n"
-                    f"用 {numbers} 通过加减乘除计算出 {target}\n"
-                    f"解法数量：{len(solutions)} ({solution_ratio:.2%})\n"
-                    f"请输入表达式（支持括号）\n"
-                    f"示例格式：/24 (3+5)*(6-3)"
-                )
-                return
+            await game_24.send(
+                f"【{difficulty}难度】新题目：\n"
+                f"用 {numbers} 通过加减乘除计算出24的倍数\n"
+                f"解法数量：{len(solutions)} ({solution_ratio:.2%})\n"
+                f"请输入表达式（支持括号）\n"
+                f"示例格式：/24 (3+5)*(6-3)"
+            )
+            return
     
     # 如果生成失败，使用默认题目
     numbers = [random.randint(1, 13) for _ in range(4)]
     solutions = solve_24_multiples(numbers)
-    target = 24
     
     update_data = {
         'numbers': numbers,
-        'target': target,
         'difficulty': difficulty,
         'solution_count': len(solutions),
         'solution_ratio': len(solutions) / 7680,
@@ -199,7 +169,7 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
     
     await game_24.send(
         f"【{difficulty}难度】新题目：\n"
-        f"用 {numbers} 通过加减乘除计算出 {target}\n"
+        f"用 {numbers} 通过加减乘除计算出24的倍数\n"
         f"请输入表达式（支持括号）"
     )
 
@@ -345,7 +315,7 @@ def generate_all_expressions(a, b, c, d, op1, op2, op3):
         f"({a}{op1}{b}){op2}({c}{op3}{d})"
     ]
 
-def validate_expression_multiples(expr: str, target_numbers: List[int], target: int) -> Tuple[bool, str, float]:
+def validate_expression_multiples(expr: str, target_numbers: List[int]) -> Tuple[bool, str, float]:
     """验证表达式是否正确"""
     try:
         # 安全检测
@@ -360,8 +330,10 @@ def validate_expression_multiples(expr: str, target_numbers: List[int], target: 
         
         # 计算结果
         result = eval(expr)
-        if not math.isclose(result, target, rel_tol=1e-6):
-            return False, f"计算结果 {result} 不等于目标值 {target}", result
+        
+        # 检查是否为24的倍数
+        if result <= 0 or not math.isclose((result / 24) % 1, 0, abs_tol=1e-6):
+            return False, f"计算结果 {result} 不是24的倍数", result
         
         return True, "", result
     except Exception as e:
@@ -421,8 +393,7 @@ async def solve_24_handler(event: Event):
     current_problem = collection.find_one(query)
     
     if (current_problem and 
-        sorted(current_problem.get('numbers', [])) == sorted(numbers) and
-        current_problem.get('target', 24) == target):
+        sorted(current_problem.get('numbers', [])) == sorted(numbers)):
         collection.update_one(query, {'$set': {'solve_used': True}})
     
     # 求解
