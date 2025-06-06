@@ -142,7 +142,7 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
     max_attempts = 8192
     for _ in range(max_attempts):
         # 从1-20范围生成4个数字
-        numbers = [random.randint(1, 20) for _ in range(4)]
+        numbers = [random.randint(1, 25) for _ in range(4)]
         
         # 计算所有可能的整数结果及其解法数
         all_results = {}
