@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 
-add_info('24', '24点游戏 - 支持难度选择和排行榜\n'
+add_info('24p', '24点游戏 - 支持难度选择和排行榜\n'
          '/24 [简单|中等|困难|地狱] - 生成对应难度题目\n'
          '/24 [表达式] - 提交答案\n'
          '/24 答案 - 查看当前题目答案(不获得积分)\n'
