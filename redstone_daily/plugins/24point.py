@@ -71,16 +71,16 @@ async def handle_24(event: Event):
         # 标记已查看答案，不再获得积分
         collection.update_one(query, {'$set': {'answer_viewed': True}})
         
-                 solutions = solve_24_multiples(current_problem['numbers'])
-         target = current_problem.get('target', 24)
-         valid_solutions = []
-         for sol in solutions:
-             try:
-                 result = eval(sol)
-                 if abs(result - target) < 1e-6:
-                     valid_solutions.append(sol)
-             except:
-                 continue
+        solutions = solve_24_multiples(current_problem['numbers'])
+        target = current_problem.get('target', 24)
+        valid_solutions = []
+        for sol in solutions:
+            try:
+                result = eval(sol)
+                if abs(result - target) < 1e-6:
+                    valid_solutions.append(sol)
+            except:
+                continue
         
         if valid_solutions:
             sample_solutions = random.sample(valid_solutions, min(3, len(valid_solutions)))
@@ -139,34 +139,35 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
         solution_ratio = len(solutions) / total_possible
         
         difficulty_config = DIFFICULTY_CONFIG[difficulty]
-                 if difficulty_config['ratio_min'] <= solution_ratio <= difficulty_config['ratio_max']:
-             # 随机选择目标数（24的倍数）
-             valid_targets = set()
-             for sol in solutions:
-                 try:
-                     result = eval(sol)
-                     if result > 0 and math.isclose((result / 24) % 1, 0, abs_tol=1e-6):
-                         valid_targets.add(int(round(result)))
-                 except:
-                     continue
-             
-             if valid_targets:
-                 # 优先选择24，如果没有24则选择其他24的倍数
-                 if 24 in valid_targets:
-                     target = 24
-                 else:
-                     target = random.choice(list(valid_targets))
-                                 update_data = {
-                     'numbers': numbers,
-                     'target': target,
-                     'difficulty': difficulty,
-                     'solution_count': len(solutions),
-                     'solution_ratio': solution_ratio,
-                     'start_time': time.time(),
-                     'answer_viewed': False,
-                     'solve_used': False,
-                     'user_id': user.id
-                 }
+        if difficulty_config['ratio_min'] <= solution_ratio <= difficulty_config['ratio_max']:
+            # 随机选择目标数（24的倍数）
+            valid_targets = set()
+            for sol in solutions:
+                try:
+                    result = eval(sol)
+                    if result > 0 and math.isclose((result / 24) % 1, 0, abs_tol=1e-6):
+                        valid_targets.add(int(round(result)))
+                except:
+                    continue
+            
+            if valid_targets:
+                # 优先选择24，如果没有24则选择其他24的倍数
+                if 24 in valid_targets:
+                    target = 24
+                else:
+                    target = random.choice(list(valid_targets))
+                
+                update_data = {
+                    'numbers': numbers,
+                    'target': target,
+                    'difficulty': difficulty,
+                    'solution_count': len(solutions),
+                    'solution_ratio': solution_ratio,
+                    'start_time': time.time(),
+                    'answer_viewed': False,
+                    'solve_used': False,
+                    'user_id': user.id
+                }
                 collection.update_one(query, {'$set': update_data}, upsert=True)
                 
                 await game_24.send(
