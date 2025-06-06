@@ -103,23 +103,31 @@ async def handle_24(event: Event):
             # 保存积分记录
             await save_score_record(user, group, score, current_problem['difficulty'], solve_time)
         
-        # 生成新题目
-        next_difficulty = current_problem.get('difficulty', '中等')
-        await generate_problem_with_difficulty(collection, query, next_difficulty, user, group)
-        
         if score > 0:
-            await game_24.send(f"🎉 回答正确！获得积分：{score}\n计算结果：{result}")
+            await game_24.send(f"🎉 回答正确！获得积分：{score}\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /24 生成新题目")
         else:
             cheat_reason = "已查看答案" if current_problem.get('answer_viewed') else "已使用solve24"
-            await game_24.send(f"🎉 回答正确！但因{cheat_reason}不获得积分\n计算结果：{result}")
+            await game_24.send(f"🎉 回答正确！但因{cheat_reason}不获得积分\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /24 生成新题目")
     else:
         await game_24.send(f"❌ 错误：{message}")
+
+def is_too_simple(numbers: List[int]) -> bool:
+    """检查题目是否过于简单（能直接连乘得到24的倍数）"""
+    product = 1
+    for num in numbers:
+        product *= num
+    return math.isclose((product / 24) % 1, 0, abs_tol=1e-6)
 
 async def generate_problem_with_difficulty(collection, query, difficulty: str, user, group):
     """生成指定难度的题目"""
     max_attempts = 100
     for _ in range(max_attempts):
         numbers = [random.randint(1, 100) for _ in range(4)]
+        
+        # 检查是否过于简单
+        if is_too_simple(numbers):
+            continue
+            
         solutions = solve_24_multiples(numbers)
         
         if not solutions:
@@ -398,34 +406,70 @@ async def solve_24_handler(event: Event):
     
     # 求解
     solutions = solve_24_multiples(numbers)
-    valid_solutions = []
-    
-    for sol in solutions:
-        try:
-            result = eval(sol)
-            if abs(result - target) < 1e-6:
-                valid_solutions.append(sol)
-        except:
-            continue
-    
     total_possible = 7680
     ratio = len(solutions) / total_possible
     
-    if not valid_solutions:
-        await solve24.send(f"数字 {numbers} 无法得到 {target}\n"
-                          f"但可以得到24的其他倍数，共有 {len(solutions)} 种解法 ({ratio:.2%})")
-        return
-    
-    # 显示最多20条结果
-    display_solutions = valid_solutions[:20]
-    result_text = f"数字 {numbers} 计算 {target} 的解法：\n"
-    result_text += f"有效解法：{len(valid_solutions)} 种\n"
-    result_text += f"总解法比例：{ratio:.2%}\n\n"
-    
-    for i, sol in enumerate(display_solutions, 1):
-        result_text += f"{i}. {sol}\n"
-    
-    if len(valid_solutions) > 20:
-        result_text += f"\n... 还有 {len(valid_solutions) - 20} 种解法未显示"
+    if len(args) >= 5:
+        # 指定了目标值，只显示该目标的解法
+        valid_solutions = []
+        for sol in solutions:
+            try:
+                result = eval(sol)
+                if abs(result - target) < 1e-6:
+                    valid_solutions.append(sol)
+            except:
+                continue
+        
+        if not valid_solutions:
+            await solve24.send(f"数字 {numbers} 无法得到 {target}\n"
+                              f"但可以得到24的其他倍数，共有 {len(solutions)} 种解法 ({ratio:.2%})")
+            return
+        
+        # 显示最多20条结果
+        display_solutions = valid_solutions[:20]
+        result_text = f"数字 {numbers} 计算 {target} 的解法：\n"
+        result_text += f"有效解法：{len(valid_solutions)} 种\n"
+        result_text += f"总解法比例：{ratio:.2%}\n\n"
+        
+        for i, sol in enumerate(display_solutions, 1):
+            result_text += f"{i}. {sol}\n"
+        
+        if len(valid_solutions) > 20:
+            result_text += f"\n... 还有 {len(valid_solutions) - 20} 种解法未显示"
+    else:
+        # 没有指定目标值，显示所有24倍数解法
+        if not solutions:
+            await solve24.send(f"数字 {numbers} 无法得到24的倍数")
+            return
+        
+        # 显示最多20条结果
+        display_solutions = solutions[:20]
+        result_text = f"数字 {numbers} 的所有24倍数解法：\n"
+        result_text += f"解法总数：{len(solutions)} 种\n"
+        result_text += f"解法比例：{ratio:.2%}\n\n"
+        
+        # 按结果分组显示
+        result_groups = {}
+        for sol in display_solutions:
+            try:
+                result = eval(sol)
+                if result not in result_groups:
+                    result_groups[result] = []
+                result_groups[result].append(sol)
+            except:
+                continue
+        
+        count = 1
+        for result_value in sorted(result_groups.keys()):
+            result_text += f"得到 {int(result_value)} 的解法：\n"
+            for sol in result_groups[result_value][:3]:  # 每个结果最多显示3个解法
+                result_text += f"{count}. {sol}\n"
+                count += 1
+            if len(result_groups[result_value]) > 3:
+                result_text += f"   还有 {len(result_groups[result_value]) - 3} 种解法...\n"
+            result_text += "\n"
+        
+        if len(solutions) > 20:
+            result_text += f"... 还有 {len(solutions) - 20} 种解法未显示"
     
     await solve24.send(result_text)
