@@ -12,34 +12,34 @@ from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 
-add_info('24p', '24点游戏 - 支持难度选择和排行榜\n'
-         '/24 [简单|中等|困难|地狱] - 生成对应难度题目\n'
-         '/24 [表达式] - 提交答案\n'
-         '/24 答案 - 查看当前题目答案(不获得积分)\n'
-         '/24 排行榜 [日|周|月|平均] - 查看排行榜\n'
-         '/solve24 [数字1] [数字2] [数字3] [数字4] [目标数] - 求解指定题目')
+add_info('速算', '速算游戏 - 支持难度选择和排行榜\n'
+         '/速算 [简单|中等|困难|地狱] - 生成对应难度题目\n'
+         '/速算 [表达式] - 提交答案\n'
+         '/速算 答案 - 查看当前题目答案(不获得积分)\n'
+         '/速算 排行榜 [日|周|月|平均] - 查看排行榜\n'
+         '/求解速算 [数字1] [数字2] [数字3] [数字4] [目标数] - 求解指定题目')
 
-add_info('solve24', '24点求解器 - 计算指定数字的所有解法\n'
-         '用法: /solve24 [数字1] [数字2] [数字3] [数字4] [目标数(可选,默认24)]\n'
-         '显示最多20条解法，包含解法数量和比例\n'
+add_info('求解速算', '速算求解器 - 计算指定数字的所有解法\n'
+         '用法: /求解速算 [数字1] [数字2] [数字3] [数字4] [目标数]\n'
+         '显示最多20条解法，包含解法数量\n'
          '注意: 使用此命令会导致相同题目无法获得积分')
 
-game_24 = on_command("24")
+speed_calc = on_command("速算")
 
-# 难度配置
+# 难度配置（基于解法数量）
 DIFFICULTY_CONFIG = {
-    '简单': {'ratio_min': 0.08, 'ratio_max': 0.15, 'multiplier': 0.1, 'name': '简单'},
-    '中等': {'ratio_min': 0.03, 'ratio_max': 0.08, 'multiplier': 1.0, 'name': '中等'},
-    '困难': {'ratio_min': 0.01, 'ratio_max': 0.03, 'multiplier': 3.0, 'name': '困难'},
-    '地狱': {'ratio_min': 0.001, 'ratio_max': 0.01, 'multiplier': 10.0, 'name': '地狱'}
+    '简单': {'solution_min': 10, 'solution_max': float('inf'), 'multiplier': 0.1, 'name': '简单'},
+    '中等': {'solution_min': 4, 'solution_max': 9, 'multiplier': 1.0, 'name': '中等'},
+    '困难': {'solution_min': 1, 'solution_max': 3, 'multiplier': 3.0, 'name': '困难'},
+    '地狱': {'solution_min': 1, 'solution_max': 1, 'multiplier': 10.0, 'name': '地狱'}
 }
 
-@game_24.handle()
-@check_command_enabled('24')
-async def handle_24(event: Event):
+@speed_calc.handle()
+@check_command_enabled('速算')
+async def handle_speed_calc(event: Event):
     user, arg_list, group = get_context(event)
     
-    db = get_database('24_game')
+    db = get_database('speed_calc_game')
     collection = db.get_db()
     
     # 构建查询条件（仅按用户绑定）
@@ -65,13 +65,13 @@ async def handle_24(event: Event):
     # 处理答案查询
     if arg_list[0] == "答案":
         if not current_problem:
-            await game_24.send("请先使用 /24 生成题目")
+            await speed_calc.send("请先使用 /速算 生成题目")
             return
         
         # 标记已查看答案，不再获得积分
         collection.update_one(query, {'$set': {'answer_viewed': True}})
         
-        solutions = solve_24_multiples(current_problem['numbers'])
+        solutions = solve_integer_results(current_problem['numbers'], current_problem['target'])
         
         if solutions:
             sample_solutions = random.sample(solutions, min(3, len(solutions)))
@@ -80,19 +80,19 @@ async def handle_24(event: Event):
         else:
             answer_text = "未找到解法"
             
-        await game_24.send(answer_text)
+        await speed_calc.send(answer_text)
         return
     
     # 验证答案
     if not current_problem:
-        await game_24.send("请先使用 /24 生成题目")
+        await speed_calc.send("请先使用 /速算 生成题目")
         return
     
     expression = arg_list[0]
-    is_valid, message, result = validate_expression_multiples(expression, current_problem['numbers'])
+    is_valid, message, result = validate_expression_target(expression, current_problem['numbers'], current_problem['target'])
     
     if is_valid:
-        # 计算积分（如果未查看答案且未使用solve24作弊）
+        # 计算积分（如果未查看答案且未使用solve作弊）
         score = 0
         if not current_problem.get('answer_viewed', False) and not current_problem.get('solve_used', False):
             solve_time = time.time() - current_problem.get('start_time', time.time())
@@ -104,45 +104,91 @@ async def handle_24(event: Event):
             await save_score_record(user, group, score, current_problem['difficulty'], solve_time)
         
         if score > 0:
-            await game_24.send(f"🎉 回答正确！获得积分：{score}\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /24 生成新题目")
+            await speed_calc.send(f"🎉 回答正确！获得积分：{score}\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /速算 生成新题目")
         else:
-            cheat_reason = "已查看答案" if current_problem.get('answer_viewed') else "已使用solve24"
-            await game_24.send(f"🎉 回答正确！但因{cheat_reason}不获得积分\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /24 生成新题目")
+            cheat_reason = "已查看答案" if current_problem.get('answer_viewed') else "已使用求解速算"
+            await speed_calc.send(f"🎉 回答正确！但因{cheat_reason}不获得积分\n计算结果：{result}\n\n继续使用这些数字尝试其他解法，或使用 /速算 生成新题目")
     else:
-        await game_24.send(f"❌ 错误：{message}")
+        await speed_calc.send(f"❌ 错误：{message}")
 
-def is_too_simple(numbers: List[int]) -> bool:
-    """检查题目是否过于简单（能直接连乘得到24的倍数）"""
-    product = 1
-    for num in numbers:
-        product *= num
-    return math.isclose((product / 24) % 1, 0, abs_tol=1e-6)
+def solve_integer_results(numbers: List[int], target: int = None) -> List[str]:
+    """求解指定整数目标"""
+    ops = {'+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv}
+    solutions = []
+    
+    # 遍历所有数字排列组合
+    for nums in permutations(numbers):
+        a, b, c, d = nums
+        
+        # 遍历所有运算符组合
+        for op1, op2, op3 in product(ops.keys(), repeat=3):
+            # 尝试不同运算顺序
+            for expr in generate_all_expressions(a, b, c, d, op1, op2, op3):
+                try:
+                    result = eval(expr)
+                    # 只保留正整数结果
+                    if (result > 0 and result <= 10000 and not math.isinf(result) and 
+                        abs(result - round(result)) < 1e-6):
+                        result = int(round(result))
+                        if target is None or result == target:
+                            solutions.append(expr)
+                except (ZeroDivisionError, OverflowError, ValueError):
+                    continue
+    
+    return list(set(solutions))
 
 async def generate_problem_with_difficulty(collection, query, difficulty: str, user, group):
     """生成指定难度的题目"""
     max_attempts = 8192
     for _ in range(max_attempts):
-        numbers = [random.randint(1, 100) for _ in range(4)]
+        # 从1-20范围生成4个数字
+        numbers = [random.randint(1, 20) for _ in range(4)]
         
-        # 检查是否过于简单
-        if is_too_simple(numbers):
+        # 计算所有可能的整数结果及其解法数
+        all_results = {}
+        ops = {'+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv}
+        
+        for nums in permutations(numbers):
+            a, b, c, d = nums
+            for op1, op2, op3 in product(ops.keys(), repeat=3):
+                for expr in generate_all_expressions(a, b, c, d, op1, op2, op3):
+                    try:
+                        result = eval(expr)
+                        if (result > 0 and result <= 10000 and not math.isinf(result) and 
+                            abs(result - round(result)) < 1e-6):
+                            result = int(round(result))
+                            if result not in all_results:
+                                all_results[result] = []
+                            all_results[result].append(expr)
+                    except (ZeroDivisionError, OverflowError, ValueError):
+                        continue
+        
+        # 去重解法
+        for result in all_results:
+            all_results[result] = list(set(all_results[result]))
+        
+        if not all_results:
             continue
-            
-        solutions = solve_24_multiples(numbers)
         
-        if not solutions:
-            continue
-            
-        total_possible = 7680  # 理论上的总解法数
-        solution_ratio = len(solutions) / total_possible
-        
+        # 根据难度配置选择合适的目标数
         difficulty_config = DIFFICULTY_CONFIG[difficulty]
-        if difficulty_config['ratio_min'] <= solution_ratio <= difficulty_config['ratio_max']:
+        suitable_targets = []
+        
+        for result, solutions in all_results.items():
+            solution_count = len(solutions)
+            if (difficulty_config['solution_min'] <= solution_count <= 
+                difficulty_config['solution_max']):
+                suitable_targets.append((result, solution_count))
+        
+        if suitable_targets:
+            # 随机选择一个符合难度的目标
+            target, solution_count = random.choice(suitable_targets)
+            
             update_data = {
                 'numbers': numbers,
+                'target': target,
                 'difficulty': difficulty,
-                'solution_count': len(solutions),
-                'solution_ratio': solution_ratio,
+                'solution_count': solution_count,
                 'start_time': time.time(),
                 'answer_viewed': False,
                 'solve_used': False,
@@ -150,39 +196,24 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
             }
             collection.update_one(query, {'$set': update_data}, upsert=True)
             
-            await game_24.send(
+            await speed_calc.send(
                 f"【{difficulty}难度】新题目：\n"
-                f"用 {numbers} 通过加减乘除计算出24的倍数\n"
-                f"解法数量：{len(solutions)} ({solution_ratio:.2%})\n"
+                f"用 {numbers} 通过加减乘除计算出 {target}\n"
+                f"解法数量：{solution_count}\n"
                 f"请输入表达式（支持括号）\n"
-                f"示例格式：/24 (3+5)*(6-3)"
+                f"示例格式：/速算 (3+5)*(6-3)"
             )
             return
     
     # 如果生成失败，使用默认题目
-    numbers = ['生成失败', '请尝试刷新', '或者重新', '选择难度']
-    
-    update_data = {
-        'numbers': numbers,
-        'difficulty': difficulty,
-        'solution_count': len(solutions),
-        'solution_ratio': len(solutions) / 7680,
-        'start_time': time.time(),
-        'answer_viewed': False,
-        'solve_used': False,
-        'user_id': user.id
-    }
-    collection.update_one(query, {'$set': update_data}, upsert=True)
-    
-    await game_24.send(
-        f"【{difficulty}难度】新题目：\n"
-        f"用 {numbers} 通过加减乘除计算出24的倍数\n"
-        f"请输入表达式（支持括号）"
+    await speed_calc.send(
+        f"【{difficulty}难度】题目生成失败\n"
+        f"请尝试重新生成或选择其他难度"
     )
 
 async def save_score_record(user, group, score: int, difficulty: str, solve_time: float):
     """保存积分记录"""
-    score_db = get_database('24_scores')
+    score_db = get_database('speed_calc_scores')
     collection = score_db.get_db()
     
     record = {
@@ -197,7 +228,7 @@ async def save_score_record(user, group, score: int, difficulty: str, solve_time
 
 async def show_leaderboard(rank_type: str, group):
     """显示排行榜"""
-    score_db = get_database('24_scores')
+    score_db = get_database('speed_calc_scores')
     collection = score_db.get_db()
     
     now = datetime.now()
@@ -271,7 +302,7 @@ async def show_leaderboard(rank_type: str, group):
     results = list(collection.aggregate(pipeline))
     
     if not results:
-        await game_24.send(f"{title}\n暂无记录")
+        await speed_calc.send(f"{title}\n暂无记录")
         return
     
     leaderboard_text = f"{title}\n"
@@ -286,44 +317,10 @@ async def show_leaderboard(rank_type: str, group):
             count = result['count']
             leaderboard_text += f"{i}. {user_id}: {score}分 ({count}题)\n"
     
-    await game_24.send(leaderboard_text)
+    await speed_calc.send(leaderboard_text)
 
-def solve_24_multiples(numbers: List[int]) -> List[str]:
-    """求解24的倍数"""
-    ops = {'+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv}
-    solutions = []
-    
-    # 遍历所有数字排列组合
-    for nums in permutations(numbers):
-        a, b, c, d = nums
-        
-        # 遍历所有运算符组合
-        for op1, op2, op3 in product(ops.keys(), repeat=3):
-            # 尝试不同运算顺序
-            for expr in generate_all_expressions(a, b, c, d, op1, op2, op3):
-                try:
-                    result = eval(expr)
-                    if (result > 0 and 
-                        math.isclose((result / 24) % 1, 0, abs_tol=1e-6) and 
-                        result <= 2400):  # 限制结果范围
-                        solutions.append(expr)
-                except (ZeroDivisionError, OverflowError, ValueError):
-                    continue
-    
-    return list(set(solutions))
-
-def generate_all_expressions(a, b, c, d, op1, op2, op3):
-    """生成所有可能的表达式"""
-    return [
-        f"(({a}{op1}{b}){op2}{c}){op3}{d}",
-        f"({a}{op1}({b}{op2}{c})){op3}{d}",
-        f"{a}{op1}(({b}{op2}{c}){op3}{d})",
-        f"{a}{op1}({b}{op2}({c}{op3}{d}))",
-        f"({a}{op1}{b}){op2}({c}{op3}{d})"
-    ]
-
-def validate_expression_multiples(expr: str, target_numbers: List[int]) -> Tuple[bool, str, float]:
-    """验证表达式是否正确"""
+def validate_expression_target(expr: str, target_numbers: List[int], target: int) -> Tuple[bool, str, float]:
+    """验证表达式是否正确计算出目标数"""
     try:
         # 安全检测
         check_expression_safety(expr)
@@ -338,13 +335,25 @@ def validate_expression_multiples(expr: str, target_numbers: List[int]) -> Tuple
         # 计算结果
         result = eval(expr)
         
-        # 检查是否为24的倍数
-        if result <= 0 or not math.isclose((result / 24) % 1, 0, abs_tol=1e-6):
-            return False, f"计算结果 {result} 不是24的倍数", result
+        # 检查是否为目标数
+        if abs(result - target) > 1e-6:
+            return False, f"计算结果 {result} 不等于目标数 {target}", result
         
         return True, "", result
     except Exception as e:
         return False, f"无效表达式: {str(e)}", 0
+
+def generate_all_expressions(a, b, c, d, op1, op2, op3):
+    """生成所有可能的表达式"""
+    return [
+        f"(({a}{op1}{b}){op2}{c}){op3}{d}",
+        f"({a}{op1}({b}{op2}{c})){op3}{d}",
+        f"{a}{op1}(({b}{op2}{c}){op3}{d})",
+        f"{a}{op1}({b}{op2}({c}{op3}{d}))",
+        f"({a}{op1}{b}){op2}({c}{op3}{d})"
+    ]
+
+
 
 def extract_numbers(expr: str) -> List[float]:
     """从表达式中提取数字"""
@@ -375,100 +384,51 @@ def check_expression_safety(expr: str):
         if isinstance(node, ast.UnaryOp) and not isinstance(node.op, (ast.USub, ast.UAdd)):
             raise ValueError("不支持的单目运算符")
 
-# solve24命令
-solve24 = on_command('solve24')
+# 求解速算命令
+solve_speed_calc = on_command('求解速算')
 
-@solve24.handle()
-async def solve_24_handler(event: Event):
+@solve_speed_calc.handle()
+async def solve_speed_calc_handler(event: Event):
     user, args, group = get_context(event)
     
-    if len(args) < 4:
-        await solve24.send("用法：/solve24 [数字1] [数字2] [数字3] [数字4] [目标数(可选，默认24)]")
+    if len(args) < 5:
+        await solve_speed_calc.send("用法：/求解速算 [数字1] [数字2] [数字3] [数字4] [目标数]")
         return
     
     try:
         numbers = [int(args[i]) for i in range(4)]
-        target = int(args[4]) if len(args) > 4 else 24
+        target = int(args[4])
     except ValueError:
-        await solve24.send("请输入有效的数字")
+        await solve_speed_calc.send("请输入有效的数字")
         return
     
-    # 标记当前题目已使用solve24（反作弊）
-    db = get_database('24_game')
+    # 标记当前题目已使用求解（反作弊）
+    db = get_database('speed_calc_game')
     collection = db.get_db()
     query = {'user_id': user.id}
     current_problem = collection.find_one(query)
     
     if (current_problem and 
-        sorted(current_problem.get('numbers', [])) == sorted(numbers)):
+        sorted(current_problem.get('numbers', [])) == sorted(numbers) and
+        current_problem.get('target') == target):
         collection.update_one(query, {'$set': {'solve_used': True}})
     
     # 求解
-    solutions = solve_24_multiples(numbers)
-    total_possible = 7680
-    ratio = len(solutions) / total_possible
+    solutions = solve_integer_results(numbers, target)
     
-    if len(args) >= 5:
-        # 指定了目标值，只显示该目标的解法
-        valid_solutions = []
-        for sol in solutions:
-            try:
-                result = eval(sol)
-                if abs(result - target) < 1e-6:
-                    valid_solutions.append(sol)
-            except:
-                continue
-        
-        if not valid_solutions:
-            await solve24.send(f"数字 {numbers} 无法得到 {target}\n"
-                              f"但可以得到24的其他倍数，共有 {len(solutions)} 种解法 ({ratio:.2%})")
-            return
-        
-        # 显示最多20条结果
-        display_solutions = valid_solutions[:20]
-        result_text = f"数字 {numbers} 计算 {target} 的解法：\n"
-        result_text += f"有效解法：{len(valid_solutions)} 种\n"
-        result_text += f"总解法比例：{ratio:.2%}\n\n"
-        
-        for i, sol in enumerate(display_solutions, 1):
-            result_text += f"{i}. {sol}\n"
-        
-        if len(valid_solutions) > 20:
-            result_text += f"\n... 还有 {len(valid_solutions) - 20} 种解法未显示"
-    else:
-        # 没有指定目标值，显示所有24倍数解法
-        if not solutions:
-            await solve24.send(f"数字 {numbers} 无法得到24的倍数")
-            return
-        
-        # 显示最多20条结果
-        display_solutions = solutions[:20]
-        result_text = f"数字 {numbers} 的所有24倍数解法：\n"
-        result_text += f"解法总数：{len(solutions)} 种\n"
-        result_text += f"解法比例：{ratio:.2%}\n\n"
-        
-        # 按结果分组显示
-        result_groups = {}
-        for sol in display_solutions:
-            try:
-                result = eval(sol)
-                if result not in result_groups:
-                    result_groups[result] = []
-                result_groups[result].append(sol)
-            except:
-                continue
-        
-        count = 1
-        for result_value in sorted(result_groups.keys()):
-            result_text += f"得到 {int(result_value)} 的解法：\n"
-            for sol in result_groups[result_value][:3]:  # 每个结果最多显示3个解法
-                result_text += f"{count}. {sol}\n"
-                count += 1
-            if len(result_groups[result_value]) > 3:
-                result_text += f"   还有 {len(result_groups[result_value]) - 3} 种解法...\n"
-            result_text += "\n"
-        
-        if len(solutions) > 20:
-            result_text += f"... 还有 {len(solutions) - 20} 种解法未显示"
+    if not solutions:
+        await solve_speed_calc.send(f"数字 {numbers} 无法得到 {target}")
+        return
     
-    await solve24.send(result_text)
+    # 显示最多20条结果
+    display_solutions = solutions[:20]
+    result_text = f"数字 {numbers} 计算 {target} 的解法：\n"
+    result_text += f"解法总数：{len(solutions)} 种\n\n"
+    
+    for i, sol in enumerate(display_solutions, 1):
+        result_text += f"{i}. {sol}\n"
+    
+    if len(solutions) > 20:
+        result_text += f"\n... 还有 {len(solutions) - 20} 种解法未显示"
+    
+    await solve_speed_calc.send(result_text)
