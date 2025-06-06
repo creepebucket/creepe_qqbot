@@ -160,8 +160,7 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
             return
     
     # 如果生成失败，使用默认题目
-    numbers = [random.randint(1, 13) for _ in range(4)]
-    solutions = solve_24_multiples(numbers)
+    numbers = ['生成失败', '请尝试刷新', '或者重新', '选择难度']
     
     update_data = {
         'numbers': numbers,
