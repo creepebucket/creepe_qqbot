@@ -30,7 +30,7 @@ speed_calc = on_command("速算")
 DIFFICULTY_CONFIG = {
     '简单': {'solution_min': 10, 'solution_max': float('inf'), 'multiplier': 0.1, 'name': '简单'},
     '中等': {'solution_min': 4, 'solution_max': 9, 'multiplier': 1.0, 'name': '中等'},
-    '困难': {'solution_min': 1, 'solution_max': 3, 'multiplier': 3.0, 'name': '困难'},
+    '困难': {'solution_min': 2, 'solution_max': 3, 'multiplier': 3.0, 'name': '困难'},
     '地狱': {'solution_min': 1, 'solution_max': 1, 'multiplier': 10.0, 'name': '地狱'}
 }
 
@@ -176,7 +176,7 @@ async def generate_problem_with_difficulty(collection, query, difficulty: str, u
         
         for result, solutions in all_results.items():
             solution_count = len(solutions)
-            if (difficulty_config['solution_min'] <= solution_count <= 
+            if (difficulty_config['solution_min'] <= solution_count <=
                 difficulty_config['solution_max']):
                 suitable_targets.append((result, solution_count))
         
