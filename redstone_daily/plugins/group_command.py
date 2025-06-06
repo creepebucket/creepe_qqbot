@@ -15,7 +15,7 @@ add_info('disable_command', '在群里禁用某指令\n需求权限3 参数:\n/e
 # 预设指令分类（可扩展）
 COMMAND_PRESETS: Dict[str, List[str]] = {
     # 示例: '娱乐': ['sing', 'joke', 'game', 'music'],
-    '娱乐': ['fish', '24'],
+    '娱乐': ['fish', '24', 'solve24'],
     '可能打扰聊天的功能': ['keyword'],
     '验证码': ['turing'],
     'mc管理': [
