@@ -388,6 +388,7 @@ def check_expression_safety(expr: str):
 solve_speed_calc = on_command('求解速算')
 
 @solve_speed_calc.handle()
+@check_command_enabled('求解速算')
 async def solve_speed_calc_handler(event: Event):
     user, args, group = get_context(event)
     
