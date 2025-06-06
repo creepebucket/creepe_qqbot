@@ -120,7 +120,7 @@ def is_too_simple(numbers: List[int]) -> bool:
 
 async def generate_problem_with_difficulty(collection, query, difficulty: str, user, group):
     """生成指定难度的题目"""
-    max_attempts = 100
+    max_attempts = 8192
     for _ in range(max_attempts):
         numbers = [random.randint(1, 100) for _ in range(4)]
         
