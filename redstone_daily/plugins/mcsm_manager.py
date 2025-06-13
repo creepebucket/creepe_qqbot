@@ -62,6 +62,7 @@ MCSM_CONFIG = {
     'url': get_env_str('MCSM_URL', 'http://localhost:23333'),
     'apikey': get_env_str('MCSM_APIKEY', ''),
     'daemon_id': get_env_str('MCSM_DAEMON_ID', ''),
+    'instances': get_env_list('INSTANCES')
 }
 
 # Git 备份配置 - 从环境变量读取
@@ -78,10 +79,10 @@ GIT_BACKUP_CONFIG = {
 # 服务器实例映射 - 从环境变量读取
 def load_server_instances() -> dict:
     """从环境变量加载服务器实例配置"""
-    # 默认配置
-    default_instances = {
-        'slimefun': get_env_str('MCSM_SLIMEFUN_ID'),
-    }
+
+    default_instances = {}
+    for i in MCSM_CONFIG['instances']:
+        default_instances[i] = get_env_str(f'MCSM_{i.upper()}_ID')
     
     # 过滤掉空值的实例
     return {name: instance_id for name, instance_id in default_instances.items() if instance_id}
