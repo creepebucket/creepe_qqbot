@@ -107,16 +107,16 @@ async def status_handler(event: Event):
     # 网络
     net = stats['network']
     msg += f'\n↑NETWORK/MB > {net['sent']['avg']} | {net['sent']['min']} | {net['sent']['max']}'
-    msg += f'\n↓NETWORK/MB > {net['recv']['avg']} | {net['recv']['min']} | {net['recv']['max']}\n'
+    msg += f'\n↓NETWORK/MB > {net['recv']['avg']} | {net['recv']['min']} | {net['recv']['max']}\n\n'
 
     # 磁盘IO
     disk_io = stats['disk_io']
-    msg += f'\n↑DISKIO/MB > {disk_io['read']['avg']} | {disk_io['read']['min']} | {disk_io['read']['max']}'
-    msg += f'\n↓DISKIO/MB > {disk_io['write']['avg']} | {disk_io['write']['min']} | {disk_io['write']['max']}'
+    msg += f'↑DISKIO/MB > {disk_io['read']['avg']} | {disk_io['read']['min']} | {disk_io['read']['max']}\n'
+    msg += f'↓DISKIO/MB > {disk_io['write']['avg']} | {disk_io['write']['min']} | {disk_io['write']['max']}\n'
 
     # 磁盘使用
     for disk in stats['disks']:
-        msg += f'\nSTORAGE[{disk['device']}] : [{disk['mountpoint']}]/% > {disk['percent']}\n'
+        msg += f'\nSTORAGE[{disk['device']}] : [{disk['mountpoint']}]/% > {disk['percent']}'
         
     msg += '\n'
 
