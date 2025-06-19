@@ -2,3 +2,5 @@ requests~=2.31.0
 pymongo~=4.7.3
 pydantic~=2.7.3
 APScheduler~=3.10.4
+psutil~=7.0.0
+nvidia-ml-py~=12.575.51
