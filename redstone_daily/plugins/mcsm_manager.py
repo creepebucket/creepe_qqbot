@@ -56,7 +56,6 @@ backup_rollback = on_command('backup_rollback')
 auto_backup = on_command('auto_backup')
 backup_analyze = on_command('backup_analyze')
 backup_clean = on_command('backup_clean')
-
 # MCSM 配置 - 从环境变量读取
 MCSM_CONFIG = {
     'url': get_env_str('MCSM_URL', 'http://localhost:23333'),
@@ -85,7 +84,6 @@ def load_server_instances() -> dict:
         default_instances[i] = get_env_str(f'MCSM_{i.upper()}_ID')
 
     print(f'检测到mcsm实例: {default_instances}')
-  
     # 过滤掉空值的实例
     return {name: instance_id for name, instance_id in default_instances.items() if instance_id}
 
