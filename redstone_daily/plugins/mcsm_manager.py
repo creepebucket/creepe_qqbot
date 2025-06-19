@@ -83,7 +83,9 @@ def load_server_instances() -> dict:
     default_instances = {}
     for i in MCSM_CONFIG['instances']:
         default_instances[i] = get_env_str(f'MCSM_{i.upper()}_ID')
-    
+
+    print(f'检测到mcsm实例: {default_instances}')
+  
     # 过滤掉空值的实例
     return {name: instance_id for name, instance_id in default_instances.items() if instance_id}
 
