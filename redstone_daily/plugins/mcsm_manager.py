@@ -152,7 +152,7 @@ def get_server_backup_path(server_name: str) -> str:
         # 根据备份目标选择路径
         if backup_target.lower() == 'world':
             # 只备份存档目录
-            backup_path = os.path.join(server_dir, 'world')
+            backup_path = os.path.join(server_dir, 'World')
         else:
             # 备份整个服务器目录
             backup_path = server_dir

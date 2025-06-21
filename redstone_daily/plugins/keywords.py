@@ -10,5 +10,8 @@ gtnh = on_keyword({'gtnh', 'GTNH'})
 @gtnh.handle()
 @check_command_enabled('keyword', False)
 async def gtnh_handler(event: Event):
+    if event.get_plaintext().startswith('/'):
+        return
+
     await gtnh.send(random.choice(['你产能不够吧', '这就是gtnh.png', 'gtnh是世界上最好玩的游戏', 'gtnh是工厂的神',
                                    '员工你做出星门了吗, 快去上工', '玩gtnh就不应该加私活']))
