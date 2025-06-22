@@ -2178,17 +2178,17 @@ async def bind_handler(event: Event):
 
     doc = db.find_one({'groupid': group.id})
     if not doc:
-        db.update_one({'groupid': group.id, '$set': {'servers': args[0]}})
+        db.update_one({'groupid': group.id}, {'$set': {'servers': args[0]}})
         await bind.send(f'已绑定本群到服务器{args[0]}')
     elif args[0] not in doc['servers']:
         s = doc['servers']
         s.append(args[0])
-        db.update_one({'groupid': group.id, '$set': {'servers': s}})
+        db.update_one({'groupid': group.id}, {'$set': {'servers': s}})
         await bind.send(f'已绑定本群到服务器{args[0]}')
     else:
         s = doc['servers']
         s.remove(args[0])
-        db.update_one({'groupid': group.id, '$set': {'servers': s}})
+        db.update_one({'groupid': group.id}, {'$set': {'servers': s}})
         await bind.send(f'已取消绑定本群到服务器{args[0]}')
 
 @on_message().handle()
