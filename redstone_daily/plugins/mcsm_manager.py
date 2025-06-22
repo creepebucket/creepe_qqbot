@@ -2179,7 +2179,7 @@ async def bind_handler(event: Event):
     doc = db.find_one({'groupid': group.id})
     print(doc['servers'])
     if not doc:
-        db.update_one({'groupid': group.id}, {'$set': {'servers': args[0]}})
+        db.insert_one({'groupid': group.id, 'servers': args[0]})
         await bind.send(f'已绑定本群到服务器{args[0]}')
     elif args[0] not in doc['servers']:
         s = doc['servers']
