@@ -2177,6 +2177,7 @@ async def bind_handler(event: Event):
     # 查绑定服务器列表并修改
 
     doc = db.find_one({'groupid': group.id})
+    print(doc['servers'])
     if not doc:
         db.update_one({'groupid': group.id}, {'$set': {'servers': args[0]}})
         await bind.send(f'已绑定本群到服务器{args[0]}')
