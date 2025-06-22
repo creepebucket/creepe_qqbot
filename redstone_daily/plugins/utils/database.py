@@ -28,7 +28,7 @@ class Database:
             return query_result
         return None
 
-    def get_db(self):
+    def get_db(self) -> pymongo.collection.Collection:
         # 获取集合实例
         return self.collection
 

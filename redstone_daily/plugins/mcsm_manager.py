@@ -1,11 +1,4 @@
-"""
-MCSM 服务器管理插件
-作者: AI Assistant
-版本: 1.0.0
-基于 BaimoMCSManager API
-"""
-
-from nonebot import on_command
+from nonebot import on_command, on_message
 from nonebot.adapters.onebot.v11 import Event
 from redstone_daily.plugins.helper import add_info
 from redstone_daily.plugins.utils import (
@@ -2164,3 +2157,63 @@ Thumbs.db
         return False, f'Git操作失败: {e.stderr.decode() if e.stderr else str(e)}'
     except Exception as e:
         return False, f'清理过程出错: {str(e)}'
+
+bind = on_command('bind')
+add_info('bind', '绑定此群消息到服务器')
+
+@bind.handle()
+@check_command_enabled('bind')
+async def bind_handler(event: Event):
+    user, args, group = get_context(event)
+
+    server_name = args[0]
+
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await bind.finish(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+
+    db = get_database('chat_bind').get_db()
+
+    # 查绑定服务器列表并修改
+
+    doc = db.find_one({'groupid': group.id})
+    if not doc:
+        db.update_one({'groupid': group.id, '$set': {'servers': args[0]}})
+        await bind.send(f'已绑定本群到服务器{args[0]}')
+    elif args[0] not in doc['servers']:
+        s = doc['servers']
+        s.append(args[0])
+        db.update_one({'groupid': group.id, '$set': {'servers': s}})
+        await bind.send(f'已绑定本群到服务器{args[0]}')
+    else:
+        s = doc['servers']
+        s.remove(args[0])
+        db.update_one({'groupid': group.id, '$set': {'servers': s}})
+        await bind.send(f'已取消绑定本群到服务器{args[0]}')
+
+@on_message().handle()
+def send_qq_to_server(event: Event):
+    user, args, group = get_context(event)
+    db = get_database('chat_bind').get_db()
+
+    # 查绑定服务器列表
+    doc = db.find_one({'groupid': group.id})
+
+    if not doc or args[0] not in doc['servers']:
+        return
+
+    # 发送服务器消息
+    try:
+        for server_name in doc['servers']:
+            # 获取服务器实例ID和备份路径
+            instance_id = get_instance_id(server_name)
+
+            applications.send_command(
+                MCSM_CONFIG['url'],
+                instance_id,
+                MCSM_CONFIG['daemon_id'],
+                MCSM_CONFIG['apikey'],
+                f'say qq[{user.name}/{user.id}]: {event.get_plaintext()}'
+            )
+    except:
+        pass
