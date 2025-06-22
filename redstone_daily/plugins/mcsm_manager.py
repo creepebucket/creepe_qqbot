@@ -2200,7 +2200,7 @@ def send_qq_to_server(event: Event):
     # 查绑定服务器列表
     doc = db.find_one({'groupid': group.id})
 
-    if not doc or args[0] not in doc['servers']:
+    if not doc:
         return
 
     # 发送服务器消息
