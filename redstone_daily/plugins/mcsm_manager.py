@@ -2233,6 +2233,7 @@ server_log_positions = {}
 async def check_server_messages():
     """定时检查服务器消息并转发到QQ"""
     last = []
+    first_run = True
     while True:
         db = get_database('chat_bind').get_db()
 
@@ -2277,7 +2278,7 @@ async def check_server_messages():
                         new_messages.append(f'服务器[{server_name}/{player_name}]: {message.replace('\n', '')}')
 
                 # 发送新消息到QQ群
-                if new_messages:
+                if new_messages and not first_run:
                     from nonebot import get_bot
 
                     try:
@@ -2290,6 +2291,11 @@ async def check_server_messages():
                         last = new_messages
                     except ValueError:
                         pass
+
+                # 第一次运行初始化
+                if first_run:
+                    first_run = False
+                    last = new_messages
         
         # 每秒检查一次
         await asyncio.sleep(1)
