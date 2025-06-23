@@ -2232,9 +2232,9 @@ server_log_positions = {}
 
 async def check_server_messages():
     """定时检查服务器消息并转发到QQ"""
+    last = []
     while True:
         db = get_database('chat_bind').get_db()
-        last = []
 
         # 获取所有绑定的群组
         bindings = db.find({})
