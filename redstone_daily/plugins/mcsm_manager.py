@@ -2234,6 +2234,7 @@ async def check_server_messages():
     """定时检查服务器消息并转发到QQ"""
     while True:
         db = get_database('chat_bind').get_db()
+        last = []
 
         # 获取所有绑定的群组
         bindings = db.find({})
@@ -2273,7 +2274,7 @@ async def check_server_messages():
                         if message.startswith('qq['):
                             continue
 
-                        new_messages.append(f'[{player_name}]: {message}')
+                        new_messages.append(f'服务器[{server_name}/{time_str}/{player_name}]: {message}')
 
                 # 发送新消息到QQ群
                 if new_messages:
@@ -2284,11 +2285,12 @@ async def check_server_messages():
                     except ValueError:
                         pass
 
-                    # 合并消息
-                    qq_message = f'服务器[{server_name}/{time_str}]:\n' + '\n'.join(new_messages)  # 只发送最近5条
+                    for message in new_messages:
+                        if message not in last:
+                            print(message)
+                            # await bot.send_group_message(groupid=group_id, message=message)
 
-                    print(qq_message)
-                    # await bot.send_group_msg(group_id=group_id, message=qq_message)
+                    last = new_messages
         
         # 每秒检查一次
         await asyncio.sleep(1)
