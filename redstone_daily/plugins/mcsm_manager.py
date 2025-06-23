@@ -2275,7 +2275,7 @@ async def check_server_messages():
                         if message.startswith('qq['):
                             continue
 
-                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message.replace('\n', '')}')
+                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message}')
 
                 # 发送新消息到QQ群
                 if new_messages and not first_run:
@@ -2286,7 +2286,7 @@ async def check_server_messages():
 
                         for message in new_messages:
                             if message not in last:
-                                await bot.send_group_msg(group_id=int(group_id), message=message)
+                                await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', ''))
 
                         last = new_messages
                     except ValueError:
