@@ -2287,8 +2287,7 @@ async def check_server_messages():
 
                     for message in new_messages:
                         if message not in last:
-                            print(message)
-                            # await bot.send_group_message(groupid=group_id, message=message)
+                            await bot.send_group_message(groupid=group_id, message=message)
 
                     last = new_messages
         
