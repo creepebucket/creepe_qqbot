@@ -2282,14 +2282,14 @@ async def check_server_messages():
 
                     try:
                         bot = get_bot()
+
+                        for message in new_messages:
+                            if message not in last:
+                                await bot.send_group_message(groupid=group_id, message=message)
+
+                        last = new_messages
                     except ValueError:
                         pass
-
-                    for message in new_messages:
-                        if message not in last:
-                            await bot.send_group_message(groupid=group_id, message=message)
-
-                    last = new_messages
         
         # 每秒检查一次
         await asyncio.sleep(1)
