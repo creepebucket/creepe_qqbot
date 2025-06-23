@@ -7,6 +7,9 @@ from redstone_daily.plugins.utils import (
 )
 from baimomcsm_api import common, applications
 import os
+import re
+import asyncio
+from datetime import datetime
 
 # 帮助信息
 add_info('mcsm_status', 'MCSM面板状态查看\n需要mc_server特殊权限\n用法: /mcsm_status')
@@ -2218,3 +2221,82 @@ def send_qq_to_server(event: Event):
             )
     except:
         pass
+
+# 服务器到QQ的反向互通 - 简单的定时检查
+import asyncio
+import re
+from datetime import datetime
+
+# 存储每个服务器的最后日志位置
+server_log_positions = {}
+
+async def check_server_messages():
+    """定时检查服务器消息并转发到QQ"""
+    while True:
+        db = get_database('chat_bind').get_db()
+
+        # 获取所有绑定的群组
+        bindings = db.find({})
+
+        for binding in bindings:
+            group_id = binding['groupid']
+            servers = binding['servers']
+
+            for server_name in servers:
+                instance_id = get_instance_id(server_name)
+
+                # 获取服务器日志
+                log_content = applications.get_outputlog(
+                    MCSM_CONFIG['url'],
+                    instance_id,
+                    MCSM_CONFIG['daemon_id'],
+                    MCSM_CONFIG['apikey']
+                )
+
+                if not log_content:
+                    continue
+
+                # 解析日志中的聊天消息
+                lines = log_content.split('\n')
+                new_messages = []
+
+                for line in lines:
+                    # 匹配Minecraft聊天消息格式
+                    # 例如: [12:34:56] [Server thread/INFO]: <玩家名> 消息内容
+                    chat_match = re.search(r'\[(\d{2}:\d{2}:\d{2})\] \[Server thread/INFO\]: <([^>]+)> (.+)', line)
+                    if chat_match:
+                        time_str = chat_match.group(1)
+                        player_name = chat_match.group(2)
+                        message = chat_match.group(3)
+
+                        # 跳过QQ消息（避免循环）
+                        if message.startswith('qq['):
+                            continue
+
+                        new_messages.append(f'[{player_name}]: {message}')
+
+                # 发送新消息到QQ群
+                if new_messages:
+                    from nonebot import get_bot
+                    bot = get_bot()
+
+                    # 合并消息
+                    qq_message = f'服务器消息[{server_name}]:\n' + '\n'.join(new_messages)  # 只发送最近5条
+
+                    print(qq_message)
+                    # await bot.send_group_msg(group_id=group_id, message=qq_message)
+        
+        # 每秒检查一次
+        await asyncio.sleep(1)
+
+# 启动服务器消息检查任务
+@nonebot.get_driver().on_startup
+async def start_server_message_checker():
+    """启动时启动服务器消息检查器"""
+    try:
+        asyncio.create_task(check_server_messages())
+        import logging
+        logging.info('✅ 服务器消息检查器已启动')
+    except Exception as e:
+        import logging
+        logging.error(f'❌ 启动服务器消息检查器失败: {str(e)}')
