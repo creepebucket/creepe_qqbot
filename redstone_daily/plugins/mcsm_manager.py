@@ -2278,7 +2278,11 @@ async def check_server_messages():
                 # 发送新消息到QQ群
                 if new_messages:
                     from nonebot import get_bot
-                    bot = get_bot()
+
+                    try:
+                        bot = get_bot()
+                    except ValueError:
+                        pass
 
                     # 合并消息
                     qq_message = f'服务器消息[{server_name}]:\n' + '\n'.join(new_messages)  # 只发送最近5条
