@@ -2263,7 +2263,6 @@ async def check_server_messages():
                 for line in lines:
                     # 匹配Minecraft聊天消息格式
                     # 例如: [12:34:56] [Server thread/INFO]: <玩家名> 消息内容
-                    print(line + 'ijiowuhfiuh')
                     chat_match = re.search(r'\[(\d{2}:\d{2}:\d{2})\] \[Server thread/INFO]: <([^>]+)> (.+)', line)
                     if chat_match:
                         time_str = chat_match.group(1)
