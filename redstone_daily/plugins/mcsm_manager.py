@@ -2274,7 +2274,7 @@ async def check_server_messages():
                         if message.startswith('qq['):
                             continue
 
-                        new_messages.append(f'服务器[{server_name}/{time_str}/{player_name}]: {message}')
+                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message.replace('\n', '')}')
 
                 # 发送新消息到QQ群
                 if new_messages:
