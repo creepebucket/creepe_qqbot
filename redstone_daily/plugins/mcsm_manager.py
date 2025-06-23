@@ -2263,7 +2263,8 @@ async def check_server_messages():
                 for line in lines:
                     # 匹配Minecraft聊天消息格式
                     # 例如: [12:34:56] [Server thread/INFO]: <玩家名> 消息内容
-                    chat_match = re.search(r'\[(\d{2}:\d{2}:\d{2})\] \[Server thread/INFO\]: <([^>]+)> (.+)', line)
+                    print(line + 'ijiowuhfiuh')
+                    chat_match = re.search(r'\[(\d{2}:\d{2}:\d{2})\] \[Server thread/INFO]: <([^>]+)> (.+)', line)
                     if chat_match:
                         time_str = chat_match.group(1)
                         player_name = chat_match.group(2)
@@ -2285,7 +2286,7 @@ async def check_server_messages():
                         pass
 
                     # 合并消息
-                    qq_message = f'服务器消息[{server_name}]:\n' + '\n'.join(new_messages)  # 只发送最近5条
+                    qq_message = f'服务器[{server_name}/{time_str}]:\n' + '\n'.join(new_messages)  # 只发送最近5条
 
                     print(qq_message)
                     # await bot.send_group_msg(group_id=group_id, message=qq_message)
