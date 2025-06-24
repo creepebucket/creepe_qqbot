@@ -58,8 +58,7 @@ def get_context(event: Event):
 
     group = Group(event.group_id)
 
-    user = User(event.user_id, event.sender.card if hasattr(event.sender, 'card') and event.sender.card
-    else event.sender.nickname)
+    user = User(event.user_id, event.sender.card) if hasattr(event.sender, 'card') and event.sender.card else User(event.user_id, event.sender.nickname) if isinstance(event, GroupMessageEvent) else User(event.user_id, '')
     args = get_args(event)
 
     return [user, args, group]
