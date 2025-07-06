@@ -1,9 +1,9 @@
 from typing import Dict, List
 
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Message, MessageEvent, GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import MessageEvent, GroupMessageEvent, MessageSegment
 
-from redstone_daily.plugins.helper import add_info
+from redstone_daily.plugins.base.helper import add_info
 from redstone_daily.plugins.utils import permission_required, get_context, Group, User
 
 enable_command = on_command('enable_command', aliases={'启用指令'})

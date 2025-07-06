@@ -5,11 +5,11 @@ import random
 import time
 from datetime import datetime, timedelta
 from itertools import permutations, product
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple
 
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Event, MessageSegment
-from redstone_daily.plugins.helper import add_info
+from nonebot.adapters.onebot.v11 import Event
+from redstone_daily.plugins.base.helper import add_info
 from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 
 add_info('速算', '速算游戏 - 支持难度选择和排行榜\n'

@@ -1,9 +1,9 @@
 import random
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Message, MessageEvent, MessageSegment
-from redstone_daily.plugins.helper import add_info
-from redstone_daily.plugins.utils import permission_required, get_context, check_command_enabled
+from nonebot.adapters.onebot.v11 import MessageEvent, MessageSegment
+from redstone_daily.plugins.base.helper import add_info
+from redstone_daily.plugins.utils import get_context, check_command_enabled
 
 FISHING_LOOT: Dict[str, Dict] = {
     # 鱼类 85%
