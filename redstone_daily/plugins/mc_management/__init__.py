@@ -1,9 +1,10 @@
 from nonebot import on_command
 from redstone_daily.plugins.base.helper import add_info
-from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
-from redstone_daily.plugins.mc_management.chat_sync import MCSM_CONFIG
-from redstone_daily.plugins.mc_management.utils import load_server_instances, get_instance_id, check_mcsm_config, \
-    check_git_backup_config, get_server_backup_path, get_directory_size, format_size, parse_latest_player_list
+from redstone_daily.plugins.mc_management.config import (
+    MCSM_CONFIG, GIT_BACKUP_CONFIG, SERVER_INSTANCES, 
+    get_instance_id, check_mcsm_config, check_git_backup_config, 
+    get_server_backup_path, get_directory_size, format_size, parse_latest_player_list
+)
 from redstone_daily.plugins.utils import (
     get_env_str, get_env_list
 )
@@ -49,32 +50,7 @@ backup_rollback = on_command('backup_rollback')
 auto_backup = on_command('auto_backup')
 backup_analyze = on_command('backup_analyze')
 backup_clean = on_command('backup_clean')
-# MCSM 配置 - 从环境变量读取
-
-# Git 备份配置 - 从环境变量读取
-GIT_BACKUP_CONFIG = {
-    'enabled': get_env_str('GIT_BACKUP_ENABLED', 'false').lower() == 'true',
-    'max_backups': int(get_env_str('GIT_BACKUP_MAX_COUNT', '10')),
-    'git_user_name': get_env_str('GIT_BACKUP_USER_NAME', 'MCSM Bot'),
-    'git_user_email': get_env_str('GIT_BACKUP_USER_EMAIL', 'bot@mcsm.local'),
-    'backup_paths': get_env_list('GIT_BACKUP_PATHS', []),  # 服务器路径映射
-    'mcsm_base_path': get_env_str('MCSM_BASE_PATH', '/opt/mcsmanager/daemon/data/InstanceData'),
-    'backup_target': get_env_str('MCSM_BACKUP_TARGET', 'full'),  # 'full' 或 'world'
-}
-
-# 服务器实例映射 - 从环境变量读取
-
-SERVER_INSTANCES = load_server_instances()
-
-
-# 定时备份数据管理器
-
-# 全局自动备份管理器实例
-auto_backup_manager = AutoBackupManager()
-
-# 定时备份调度器
-
-# 启动调度器
+# 定时备份调度器和自动备份管理器在 auto_backup.py 中处理
 
 add_info('bind', '绑定此群消息到服务器')
 

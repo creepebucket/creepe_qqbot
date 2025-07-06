@@ -1,8 +1,10 @@
 import os
 
 from baimomcsm_api import applications
-from redstone_daily.plugins.mc_management import get_instance_id, get_server_backup_path, MCSM_CONFIG, \
+from redstone_daily.plugins.mc_management.config import (
+    get_instance_id, get_server_backup_path, MCSM_CONFIG, 
     GIT_BACKUP_CONFIG, get_directory_size, format_size
+)
 from redstone_daily.plugins.utils import get_database
 
 

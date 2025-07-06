@@ -3,8 +3,8 @@ import asyncio
 import nonebot
 from nonebot.adapters.onebot.v11 import Event
 
-from redstone_daily.plugins.mc_management import auto_backup_manager, auto_backup, check_mcsm_config, \
-    check_git_backup_config, SERVER_INSTANCES, get_instance_id
+from redstone_daily.plugins.mc_management import auto_backup
+from redstone_daily.plugins.mc_management.config import check_mcsm_config, check_git_backup_config, SERVER_INSTANCES, get_instance_id
 from redstone_daily.plugins.utils import User, check_command_enabled, get_context
 
 
@@ -36,8 +36,12 @@ async def backup_scheduler():
 
     while True:
         try:
+            # 延迟导入避免循环导入
+            from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
+            backup_manager = AutoBackupManager()
+            
             # 检查所有启用的服务器
-            enabled_servers = auto_backup_manager.get_all_enabled_servers()
+            enabled_servers = backup_manager.get_all_enabled_servers()
 
             for server_config in enabled_servers:
                 server_name = server_config['server_name']
@@ -59,7 +63,7 @@ async def backup_scheduler():
 
                 if should_backup:
                     # 执行静默备份
-                    success, message = await auto_backup_manager.silent_backup(server_name)
+                    success, message = await backup_manager.silent_backup(server_name)
                     logging.info(f'定时备份 {server_name}: {"成功" if success else "失败"} - {message}')
 
         except Exception as e:
@@ -69,13 +73,18 @@ async def backup_scheduler():
         await asyncio.sleep(60)
 
 
+# 全局调度器状态
+_scheduler_running = False
+_scheduler_task = None
+
 @nonebot.get_driver().on_startup
 async def start_backup_scheduler():
     """启动时自动启动备份调度器"""
+    global _scheduler_running, _scheduler_task
     try:
-        if not auto_backup_manager._scheduler_running:
-            auto_backup_manager._scheduler_running = True
-            auto_backup_manager._scheduler_task = asyncio.create_task(backup_scheduler())
+        if not _scheduler_running:
+            _scheduler_running = True
+            _scheduler_task = asyncio.create_task(backup_scheduler())
             import logging
             logging.info('✅ 自动备份调度器已启动')
         else:
@@ -89,10 +98,11 @@ async def start_backup_scheduler():
 @nonebot.get_driver().on_shutdown
 async def stop_backup_scheduler():
     """关闭时停止备份调度器"""
+    global _scheduler_running, _scheduler_task
     try:
-        if auto_backup_manager._scheduler_task:
-            auto_backup_manager._scheduler_task.cancel()
-            auto_backup_manager._scheduler_running = False
+        if _scheduler_task:
+            _scheduler_task.cancel()
+            _scheduler_running = False
             import logging
             logging.info('🛑 自动备份调度器已停止')
     except Exception as e:
@@ -125,12 +135,16 @@ async def handle_auto_backup(event: Event):
         message = '⚙️ 自动备份状态:\n\n'
 
         # 显示调度器状态
-        scheduler_status = "✅ 运行中" if auto_backup_manager._scheduler_running else "❌ 已停止"
+        scheduler_status = "✅ 运行中" if _scheduler_running else "❌ 已停止"
         message += f'📡 调度器: {scheduler_status}\n\n'
+
+        # 延迟导入避免循环导入
+        from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
+        backup_manager = AutoBackupManager()
 
         # 显示各服务器状态
         for server_name in SERVER_INSTANCES.keys():
-            config = auto_backup_manager.get_server_config(server_name)
+            config = backup_manager.get_server_config(server_name)
             status = "✅ 启用" if config['enabled'] else "❌ 禁用"
             interval = config['interval_minutes']
 
@@ -205,25 +219,34 @@ async def handle_auto_backup(event: Event):
                 await auto_backup.send('❌ 间隔分钟必须是数字')
                 return
 
+        # 延迟导入避免循环导入
+        from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
+        backup_manager = AutoBackupManager()
+
         # 保存配置
-        config = auto_backup_manager.get_server_config(server_name)
+        config = backup_manager.get_server_config(server_name)
         config['enabled'] = True
         config['interval_minutes'] = interval_minutes
-        auto_backup_manager.set_server_config(server_name, config)
+        backup_manager.set_server_config(server_name, config)
 
         # 确保调度器运行
-        if not auto_backup_manager._scheduler_running:
+        if not _scheduler_running:
             import asyncio
-            auto_backup_manager._scheduler_running = True
-            auto_backup_manager._scheduler_task = asyncio.create_task(backup_scheduler())
+            global _scheduler_running, _scheduler_task
+            _scheduler_running = True
+            _scheduler_task = asyncio.create_task(backup_scheduler())
 
         await auto_backup.send(f'✅ 已启用服务器 {server_name} 的自动备份\n⏰ 备份间隔: {interval_minutes}分钟\n💡 只在有玩家在线时备份，不会发送QQ消息')
 
     elif action == 'off':
+        # 延迟导入避免循环导入
+        from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
+        backup_manager = AutoBackupManager()
+
         # 禁用自动备份
-        config = auto_backup_manager.get_server_config(server_name)
+        config = backup_manager.get_server_config(server_name)
         config['enabled'] = False
-        auto_backup_manager.set_server_config(server_name, config)
+        backup_manager.set_server_config(server_name, config)
 
         await auto_backup.send(f'✅ 已禁用服务器 {server_name} 的自动备份')
 

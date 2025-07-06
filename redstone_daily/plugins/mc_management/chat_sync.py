@@ -6,17 +6,10 @@ from nonebot import on_command, on_message
 from nonebot.adapters.onebot.v11 import Event
 
 from baimomcsm_api import applications
-from redstone_daily.plugins.mc_management import get_instance_id
+from redstone_daily.plugins.mc_management.config import get_instance_id, MCSM_CONFIG
 from redstone_daily.plugins.mc_management.backup.auto_backup import check_server_permission_async
 
-from redstone_daily.plugins.utils import get_env_str, get_env_list, check_command_enabled, get_context, get_database
-
-MCSM_CONFIG = {
-    'url': get_env_str('MCSM_URL', 'http://localhost:23333'),
-    'apikey': get_env_str('MCSM_APIKEY', ''),
-    'daemon_id': get_env_str('MCSM_DAEMON_ID', ''),
-    'instances': get_env_list('INSTANCES')
-}
+from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 bind = on_command('bind')
 
 
