@@ -7,7 +7,7 @@ from nonebot.adapters.onebot.v11 import Event
 
 from baimomcsm_api import applications
 from redstone_daily.plugins.mc_management.config import get_instance_id, MCSM_CONFIG
-from redstone_daily.plugins.mc_management.backup.auto_backup import check_server_permission_async
+from redstone_daily.plugins.mc_management import check_server_permission_async
 
 from redstone_daily.plugins.utils import check_command_enabled, get_context, get_database
 bind = on_command('bind')
