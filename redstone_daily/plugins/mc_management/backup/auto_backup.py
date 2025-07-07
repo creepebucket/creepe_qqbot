@@ -115,12 +115,12 @@ async def handle_auto_backup(event: Event):
     action = args[0].lower()
 
     if action == 'status':
+        global _scheduler_running, _scheduler_task
         # 显示所有服务器的自动备份状态
         message = '⚙️ 自动备份状态:\n\n'
 
         # 显示调度器状态
 
-        global _scheduler_running, _scheduler_task
         scheduler_status = "✅ 运行中" if _scheduler_running else "❌ 已停止"
         message += f'📡 调度器: {scheduler_status}\n\n'
 
