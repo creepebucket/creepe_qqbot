@@ -1,9 +1,11 @@
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
 
 from baimomcsm_api import applications
-from redstone_daily.plugins.mc_management import server_start, server_stop, server_restart, server_kill
 from redstone_daily.plugins.mc_management.config import check_mcsm_config, get_instance_id, MCSM_CONFIG
 from redstone_daily.plugins.utils import check_command_enabled, get_context, check_server_permission_async
+
+server_start = on_command('server_start')
 
 
 @server_start.handle()
@@ -41,6 +43,9 @@ async def handle_server_start(event: Event):
         await server_start.send(f'❌ 启动服务器失败')
 
 
+server_stop = on_command('server_stop')
+
+
 @server_stop.handle()
 @check_command_enabled('server_stop')
 async def handle_server_stop(event: Event):
@@ -76,6 +81,9 @@ async def handle_server_stop(event: Event):
         await server_stop.send(f'❌ 停止服务器失败')
 
 
+server_restart = on_command('server_restart')
+
+
 @server_restart.handle()
 @check_command_enabled('server_restart')
 async def handle_server_restart(event: Event):
@@ -109,6 +117,9 @@ async def handle_server_restart(event: Event):
         await server_restart.send(f'✅ 服务器 {server_name} 重启指令已发送')
     else:
         await server_restart.send(f'❌ 重启服务器失败')
+
+
+server_kill = on_command('server_kill')
 
 
 @server_kill.handle()

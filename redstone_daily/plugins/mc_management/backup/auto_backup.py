@@ -1,9 +1,9 @@
 import asyncio
 
 import nonebot
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
 
-from redstone_daily.plugins.mc_management import auto_backup
 from redstone_daily.plugins.mc_management.config import check_mcsm_config, check_git_backup_config, SERVER_INSTANCES, get_instance_id
 from redstone_daily.plugins.utils import check_command_enabled, get_context, User, check_server_permission_async
 
@@ -90,6 +90,9 @@ async def stop_backup_scheduler():
     except Exception as e:
         import logging
         logging.error(f'❌ 停止自动备份调度器失败: {str(e)}')
+
+
+auto_backup = on_command('auto_backup')
 
 
 @auto_backup.handle()

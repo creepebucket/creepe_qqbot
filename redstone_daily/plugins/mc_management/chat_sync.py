@@ -154,3 +154,6 @@ async def start_server_message_checker():
     except Exception as e:
         import logging
         logging.error(f'❌ 启动服务器消息检查器失败: {str(e)}')
+
+
+server_log_positions = {}

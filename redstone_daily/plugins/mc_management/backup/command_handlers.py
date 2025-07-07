@@ -1,9 +1,8 @@
 import os
 
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
 
-from redstone_daily.plugins.mc_management import server_backup, backup_info, backup_list, backup_rollback, \
-    backup_analyze, backup_clean
 from redstone_daily.plugins.mc_management.config import (
     check_mcsm_config, check_git_backup_config, SERVER_INSTANCES, 
     get_instance_id, get_server_backup_path, get_directory_size, format_size, GIT_BACKUP_CONFIG
@@ -11,6 +10,8 @@ from redstone_daily.plugins.mc_management.config import (
 from redstone_daily.plugins.mc_management.backup.utils import execute_git_backup, execute_backup_rollback, \
     analyze_single_server, clean_git_repository
 from redstone_daily.plugins.utils import check_command_enabled, get_context, check_server_permission_async
+
+server_backup = on_command('server_backup')
 
 
 @server_backup.handle()
@@ -74,6 +75,9 @@ async def handle_server_backup(event: Event):
         import logging
         logging.error(f'备份服务器 {server_name} 时出错: {str(e)}', exc_info=True)
         await server_backup.send(f'❌ 备份过程中发生未知错误，请查看日志或联系管理员')
+
+
+backup_info = on_command('backup_info')
 
 
 @backup_info.handle()
@@ -210,6 +214,9 @@ async def handle_backup_info(event: Event):
         await backup_info.send(f'❌ 获取备份信息时出错，请查看日志')
 
 
+backup_list = on_command('backup_list')
+
+
 @backup_list.handle()
 @check_command_enabled('backup_list')
 async def handle_backup_list(event: Event):
@@ -319,6 +326,9 @@ async def handle_backup_list(event: Event):
         await backup_list.send(f'❌ 获取备份历史时出错: {str(e)}')
 
 
+backup_rollback = on_command('backup_rollback')
+
+
 @backup_rollback.handle()
 @check_command_enabled('backup_rollback')
 async def handle_backup_rollback(event: Event):
@@ -380,6 +390,9 @@ async def handle_backup_rollback(event: Event):
         import logging
         logging.error(f'回滚服务器 {server_name} 时出错: {str(e)}', exc_info=True)
         await backup_rollback.send(f'❌ 回滚过程中发生未知错误，请查看日志或联系管理员')
+
+
+backup_analyze = on_command('backup_analyze')
 
 
 @backup_analyze.handle()
@@ -460,6 +473,9 @@ async def handle_backup_analyze(event: Event):
         message += f'💡 使用 /backup_analyze <服务器名> 查看详细分析'
 
         await backup_analyze.send(message)
+
+
+backup_clean = on_command('backup_clean')
 
 
 @backup_clean.handle()

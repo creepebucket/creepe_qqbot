@@ -1,9 +1,4 @@
-from nonebot import on_command
 from redstone_daily.plugins.base.helper import add_info
-from redstone_daily.plugins.utils import (
-    get_env_str, get_env_list
-)
-
 
 from .chat_sync import *
 from .server_commands import *
@@ -34,34 +29,4 @@ add_info('backup_rollback', '回滚到指定备份版本\n需要对应服务器�
 add_info('auto_backup', '管理定时自动备份\n需要对应服务器特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
 add_info('backup_analyze', '分析备份仓库大小和增长趋势\n无需权限\n用法: /backup_analyze [服务器名]')
 add_info('backup_clean', '手动清理备份仓库Git历史\n需要对应服务器特殊权限\n用法: /backup_clean <服务器名>')
-
-# 命令处理器
-mcsm_status = on_command('mcsm_status')
-server_list = on_command('server_list')
-server_info = on_command('server_info')
-server_status = on_command('server_status')
-server_start = on_command('server_start')
-server_stop = on_command('server_stop')
-server_restart = on_command('server_restart')
-server_kill = on_command('server_kill')
-whitelist = on_command('whitelist')
-players = on_command('players')
-player_list = on_command('player_list')
-server_command = on_command('server_command')
-server_backup = on_command('server_backup')
-backup_info = on_command('backup_info')
-backup_list = on_command('backup_list')
-backup_rollback = on_command('backup_rollback')
-auto_backup = on_command('auto_backup')
-backup_analyze = on_command('backup_analyze')
-backup_clean = on_command('backup_clean')
-# 定时备份调度器和自动备份管理器在 auto_backup.py 中处理
-
 add_info('bind', '绑定此群消息到服务器')
-
-# 服务器到QQ的反向互通 - 简单的定时检查
-
-# 存储每个服务器的最后日志位置
-server_log_positions = {}
-
-# 启动服务器消息检查任务

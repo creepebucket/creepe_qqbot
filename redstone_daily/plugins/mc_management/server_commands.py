@@ -1,10 +1,12 @@
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
 
 from baimomcsm_api import applications
-from redstone_daily.plugins.mc_management import whitelist, server_command
 from redstone_daily.plugins.mc_management.config import check_mcsm_config, get_instance_id, MCSM_CONFIG
 from redstone_daily.plugins.utils import check_command_enabled, get_context, check_server_permission_async
 
+server_command = on_command('server_command')
+whitelist = on_command('whitelist')
 
 @whitelist.handle()
 @check_command_enabled('whitelist')

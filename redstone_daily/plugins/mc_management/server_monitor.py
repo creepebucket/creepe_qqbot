@@ -1,9 +1,11 @@
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
 
 from baimomcsm_api import common, applications
-from redstone_daily.plugins.mc_management import mcsm_status, server_list, server_info, server_status, players, player_list
 from redstone_daily.plugins.mc_management.config import check_mcsm_config, MCSM_CONFIG, SERVER_INSTANCES, get_instance_id, parse_latest_player_list
 from redstone_daily.plugins.utils import check_command_enabled, permission_required, get_context
+
+mcsm_status = on_command('mcsm_status')
 
 
 @mcsm_status.handle()
@@ -36,6 +38,9 @@ async def handle_mcsm_status(event: Event):
         await mcsm_status.send(f'❌ 获取面板状态失败，状态码: {result.get("status")}')
 
 
+server_list = on_command('server_list')
+
+
 @server_list.handle()
 @check_command_enabled('server_list')
 async def handle_server_list(event: Event):
@@ -59,6 +64,9 @@ async def handle_server_list(event: Event):
             message += f"❓ {server_name}: 状态未知\n"
 
     await server_list.send(message)
+
+
+server_info = on_command('server_info')
 
 
 @server_info.handle()
@@ -96,6 +104,9 @@ async def handle_server_info(event: Event):
         await server_info.send(message)
     else:
         await server_info.send(f'❌ 获取服务器信息失败')
+
+
+server_status = on_command('server_status')
 
 
 @server_status.handle()
@@ -136,6 +147,9 @@ async def handle_server_status(event: Event):
         await server_status.send(message)
     else:
         await server_status.send(f'❌ 获取服务器状态失败')
+
+
+players = on_command('players')
 
 
 @players.handle()
@@ -195,6 +209,9 @@ async def handle_players(event: Event):
     message += f"\n🎮 总在线玩家数: {total_players}"
     message += f"\n\n💡 查看具体玩家名单请使用: /player_list <服务器名>"
     await players.send(message)
+
+
+player_list = on_command('player_list')
 
 
 @player_list.handle()
