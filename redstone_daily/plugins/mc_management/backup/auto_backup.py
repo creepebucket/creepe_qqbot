@@ -3,10 +3,10 @@ import asyncio
 import nonebot
 from nonebot.adapters.onebot.v11 import Event
 
-from redstone_daily.plugins import check_server_permission_async
 from redstone_daily.plugins.mc_management import auto_backup
 from redstone_daily.plugins.mc_management.config import check_mcsm_config, check_git_backup_config, SERVER_INSTANCES, get_instance_id
-from redstone_daily.plugins.utils import check_command_enabled, get_context, User
+from redstone_daily.plugins.utils import check_command_enabled, get_context, User, check_server_permission_async
+
 
 async def backup_scheduler():
     """定时备份调度器"""
