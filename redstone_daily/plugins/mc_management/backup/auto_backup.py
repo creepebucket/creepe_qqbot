@@ -98,6 +98,7 @@ auto_backup = on_command('auto_backup')
 @check_command_enabled('auto_backup')
 async def handle_auto_backup(event: Event):
     """管理定时自动备份"""
+    global _scheduler_running, _scheduler_task
     user, args, group = get_context(event)
 
     if not check_mcsm_config():
@@ -115,7 +116,6 @@ async def handle_auto_backup(event: Event):
     action = args[0].lower()
 
     if action == 'status':
-        global _scheduler_running, _scheduler_task
         # 显示所有服务器的自动备份状态
         message = '⚙️ 自动备份状态:\n\n'
 
@@ -216,8 +216,6 @@ async def handle_auto_backup(event: Event):
         backup_manager.set_server_config(server_name, config)
 
         # 确保调度器运行
-
-        global _scheduler_running, _scheduler_task
         if not _scheduler_running:
             import asyncio
             _scheduler_running = True
