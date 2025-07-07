@@ -56,17 +56,17 @@ async def backup_scheduler():
 
 
 # 全局调度器状态
-_scheduler_running = False
-_scheduler_task = None
+_scheduler_running_creepebot = False
+_scheduler_task_creepebot = None
 
 @nonebot.get_driver().on_startup
 async def start_backup_scheduler():
     """启动时自动启动备份调度器"""
-    global _scheduler_running, _scheduler_task
+    global _scheduler_running_creepebot, _scheduler_task_creepebot
     try:
-        if not _scheduler_running:
-            _scheduler_running = True
-            _scheduler_task = asyncio.create_task(backup_scheduler())
+        if not _scheduler_running_creepebot:
+            _scheduler_running_creepebot = True
+            _scheduler_task_creepebot = asyncio.create_task(backup_scheduler())
             import logging
             logging.info('✅ 自动备份调度器已启动')
         else:
@@ -80,11 +80,11 @@ async def start_backup_scheduler():
 @nonebot.get_driver().on_shutdown
 async def stop_backup_scheduler():
     """关闭时停止备份调度器"""
-    global _scheduler_running, _scheduler_task
+    global _scheduler_running_creepebot, _scheduler_task_creepebot
     try:
-        if _scheduler_task:
-            _scheduler_task.cancel()
-            _scheduler_running = False
+        if _scheduler_task_creepebot:
+            _scheduler_task_creepebot.cancel()
+            _scheduler_running_creepebot = False
             import logging
             logging.info('🛑 自动备份调度器已停止')
     except Exception as e:
@@ -120,7 +120,7 @@ async def handle_auto_backup(event: Event):
         message = '⚙️ 自动备份状态:\n\n'
 
         # 显示调度器状态
-        scheduler_status = "✅ 运行中" if _scheduler_running else "❌ 已停止"
+        scheduler_status = "✅ 运行中" if _scheduler_running_creepebot else "❌ 已停止"
         message += f'📡 调度器: {scheduler_status}\n\n'
 
         # 延迟导入避免循环导入
@@ -215,11 +215,11 @@ async def handle_auto_backup(event: Event):
         backup_manager.set_server_config(server_name, config)
 
         # 确保调度器运行
-        if not _scheduler_running:
+        if not _scheduler_running_creepebot:
             import asyncio
-            global _scheduler_running, _scheduler_task
-            _scheduler_running = True
-            _scheduler_task = asyncio.create_task(backup_scheduler())
+            global _scheduler_running_creepebot, _scheduler_task_creepebot
+            _scheduler_running_creepebot = True
+            _scheduler_task_creepebot = asyncio.create_task(backup_scheduler())
 
         await auto_backup.send(f'✅ 已启用服务器 {server_name} 的自动备份\n⏰ 备份间隔: {interval_minutes}分钟\n💡 只在有玩家在线时备份，不会发送QQ消息')
 
