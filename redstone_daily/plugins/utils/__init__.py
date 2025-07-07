@@ -4,7 +4,6 @@ from .user import *
 from .group import *
 from .file_manager import get_file_manager, FileManager, FileManagerError
 from .env_loader import get_env, get_env_str, get_env_int, get_env_float, get_env_bool, get_env_list, env_loader
-from .. import User
 
 
 def get_all_ops() -> list:
@@ -72,19 +71,3 @@ def get_context(event: Event):
     return [user, args, group]
 
 
-async def check_server_permission_async(user: User, server_name: str, group) -> bool:
-    """
-    检查用户是否有指定服务器的特殊权限
-
-    Args:
-        user: 用户对象
-        server_name: 服务器名称
-        group: 群组对象（保留参数以保持接口一致性）
-
-    Returns:
-        bool: 是否有权限
-    """
-    try:
-        return await user.has_special_permission(server_name)
-    except Exception:
-        return False
