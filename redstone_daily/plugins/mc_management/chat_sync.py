@@ -131,8 +131,7 @@ async def check_server_messages():
                         for message in new_messages:
                             if message not in last[server_name]:
 
-                                print(message)
-                                # await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
+                                await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
 
                         last[server_name] = new_messages
                     except ValueError:
