@@ -119,7 +119,7 @@ async def check_server_messages():
                         if message.startswith('qq['):
                             continue
 
-                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message}标记标记qwertyuiop{time_str}{time.time()}')  #加个时间防止去重bug
+                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message}标记标记qwertyuiop{time_str}')  #加个时间防止去重bug
 
                 # 发送新消息到QQ群
                 if new_messages and initialized.get(server_name):
@@ -130,7 +130,9 @@ async def check_server_messages():
 
                         for message in new_messages:
                             if message not in last[server_name]:
-                                await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
+
+                                print(message)
+                                # await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
 
                         last[server_name] = new_messages
                     except ValueError:
