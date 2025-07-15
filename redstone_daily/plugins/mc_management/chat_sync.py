@@ -76,8 +76,8 @@ def send_qq_to_server(event: Event):
 
 async def check_server_messages():
     """定时检查服务器消息并转发到QQ"""
-    last = []
-    first_run = True
+    last = {}
+    initialized = {}
     while True:
         db = get_database('chat_bind').get_db()
 
@@ -122,24 +122,24 @@ async def check_server_messages():
                         new_messages.append(f'服务器[{server_name}/{player_name}]: {message}标记标记qwertyuiop{time_str}{time.time()}')  #加个时间防止去重bug
 
                 # 发送新消息到QQ群
-                if new_messages and not first_run:
+                if new_messages and initialized.get(server_name):
                     from nonebot import get_bot
 
                     try:
                         bot = get_bot()
 
                         for message in new_messages:
-                            if message not in last:
+                            if message not in last[server_name]:
                                 await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
 
-                        last = new_messages
+                        last[server_name] = new_messages
                     except ValueError:
                         pass
 
                 # 第一次运行初始化
-                if first_run:
-                    first_run = False
-                    last = new_messages
+                if not initialized.get(server_name):
+                    initialized[server_name] = True
+                    last[server_name] = new_messages
 
         # 每秒检查一次
         await asyncio.sleep(1)
