@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 
 import nonebot
 from nonebot import on_command, on_message
@@ -118,7 +119,7 @@ async def check_server_messages():
                         if message.startswith('qq['):
                             continue
 
-                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message}')
+                        new_messages.append(f'服务器[{server_name}/{player_name}]: {message}标记标记qwertyuiop{time_str}{time.time()}')  #加个时间防止去重bug
 
                 # 发送新消息到QQ群
                 if new_messages and not first_run:
@@ -129,7 +130,7 @@ async def check_server_messages():
 
                         for message in new_messages:
                             if message not in last:
-                                await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', ''))
+                                await bot.send_group_msg(group_id=int(group_id), message=message.replace('\n', '').split('标记标记qwertyuiop')[0])
 
                         last = new_messages
                     except ValueError:
