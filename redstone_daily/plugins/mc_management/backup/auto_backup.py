@@ -10,12 +10,14 @@ from redstone_daily.plugins.utils import check_command_enabled, get_context, Use
 
 # 配置日志记录器
 logger = logging.getLogger(__name__)
+# 设置日志级别为DEBUG以便看到详细信息
+logger.setLevel(logging.DEBUG)
 
 async def backup_scheduler():
     """定时备份调度器"""
     from datetime import datetime, timedelta
     
-    print('🚀 自动备份调度器开始运行')
+    logger.info('🚀 自动备份调度器开始运行')
 
     while True:
         try:
@@ -26,16 +28,18 @@ async def backup_scheduler():
             try:
                 backup_manager = AutoBackupManager()
             except Exception as e:
-                print(f'❌ AutoBackupManager初始化失败: {str(e)}')
+                logger.error(f'❌ AutoBackupManager初始化失败: {str(e)}')
                 await asyncio.sleep(60)
                 continue
             
             # 检查所有启用的服务器
             try:
                 enabled_servers = backup_manager.get_all_enabled_servers()
+                # 使用 print 确保能看到这个信息
                 print(f'检查到 {len(enabled_servers)} 个启用自动备份的服务器')
+                logger.debug(f'检查到 {len(enabled_servers)} 个启用自动备份的服务器')
             except Exception as e:
-                print(f'❌ 获取启用服务器列表失败: {str(e)}')
+                logger.error(f'❌ 获取启用服务器列表失败: {str(e)}')
                 await asyncio.sleep(60)
                 continue
 
@@ -49,32 +53,34 @@ async def backup_scheduler():
                     should_backup = False
                     if not last_backup:
                         should_backup = True  # 从未备份过
-                        print(f'{server_name}: 从未备份过，准备执行首次备份')
+                        logger.debug(f'{server_name}: 从未备份过，准备执行首次备份')
                     else:
                         try:
                             last_backup_time = datetime.fromisoformat(last_backup)
                             next_backup_time = last_backup_time + timedelta(minutes=interval_minutes)
                             if datetime.now() >= next_backup_time:
                                 should_backup = True
-                                print(f'{server_name}: 到达备份时间，准备执行备份')
+                                logger.debug(f'{server_name}: 到达备份时间，准备执行备份')
                             else:
-                                print(f'{server_name}: 距离下次备份还有 {(next_backup_time - datetime.now()).total_seconds()//60:.0f} 分钟')
+                                logger.debug(f'{server_name}: 距离下次备份还有 {(next_backup_time - datetime.now()).total_seconds()//60:.0f} 分钟')
                         except Exception as e:
                             should_backup = True  # 解析时间失败，执行备份
-                            print(f'{server_name}: 解析备份时间失败，执行备份: {str(e)}')
+                            logger.warning(f'{server_name}: 解析备份时间失败，执行备份: {str(e)}')
 
                     if should_backup:
                         print(f'🔄 开始执行 {server_name} 的定时备份')
+                        logger.info(f'🔄 开始执行 {server_name} 的定时备份')
                         # 执行静默备份
                         success, message = await backup_manager.silent_backup(server_name)
                         log_level = logging.INFO if success else logging.ERROR
+                        print(f'定时备份 {server_name}: {"✅ 成功" if success else "❌ 失败"} - {message}')
                         logger.log(log_level, f'定时备份 {server_name}: {"✅ 成功" if success else "❌ 失败"} - {message}')
 
                 except Exception as e:
-                    print(f'❌ 处理服务器 {server_config.get("server_name", "未知")} 备份时出错: {str(e)}')
+                    logger.error(f'❌ 处理服务器 {server_config.get("server_name", "未知")} 备份时出错: {str(e)}')
 
         except Exception as e:
-            print(f'❌ 定时备份调度器出错: {str(e)}')
+            logger.error(f'❌ 定时备份调度器出错: {str(e)}', exc_info=True)
 
         # 每1分钟检查一次
         await asyncio.sleep(60)
@@ -89,42 +95,42 @@ async def start_backup_scheduler():
     """启动时自动启动备份调度器"""
     global _scheduler_running, _scheduler_task
     
-    print('🔧 准备启动自动备份调度器...')
+    logger.info('🔧 准备启动自动备份调度器...')
     
     try:
         # 检查必要配置
         if not check_mcsm_config():
-            print('⚠️ MCSM配置不完整，跳过启动自动备份调度器')
+            logger.warning('⚠️ MCSM配置不完整，跳过启动自动备份调度器')
             return
             
         if not check_git_backup_config():
-            print('⚠️ Git备份配置不完整，跳过启动自动备份调度器')
+            logger.warning('⚠️ Git备份配置不完整，跳过启动自动备份调度器')
             return
         
         # 检查调度器是否已在运行
         if _scheduler_running and _scheduler_task and not _scheduler_task.done():
-            print('⚠️ 自动备份调度器已在运行')
+            logger.info('⚠️ 自动备份调度器已在运行')
             return
         
         # 启动调度器
         _scheduler_running = True
         _scheduler_task = asyncio.create_task(backup_scheduler())
-        print('✅ 自动备份调度器已成功启动')
+        logger.info('✅ 自动备份调度器已成功启动')
         
         # 测试数据库连接
         try:
             from redstone_daily.plugins.mc_management.backup.utils import AutoBackupManager
             backup_manager = AutoBackupManager()
             enabled_count = len(backup_manager.get_all_enabled_servers())
-            print(f'📊 当前有 {enabled_count} 个服务器启用了自动备份')
+            logger.info(f'📊 当前有 {enabled_count} 个服务器启用了自动备份')
         except Exception as e:
-            print(f'❌ 数据库连接测试失败: {str(e)}')
+            logger.error(f'❌ 数据库连接测试失败: {str(e)}')
             # 不阻止调度器启动，但记录错误
             
     except Exception as e:
         _scheduler_running = False
         _scheduler_task = None
-        print(f'❌ 启动自动备份调度器失败: {str(e)}')
+        logger.error(f'❌ 启动自动备份调度器失败: {str(e)}', exc_info=True)
 
 
 @nonebot.get_driver().on_shutdown
@@ -132,7 +138,7 @@ async def stop_backup_scheduler():
     """关闭时停止备份调度器"""
     global _scheduler_running, _scheduler_task
     
-    print('🛑 准备停止自动备份调度器...')
+    logger.info('🛑 准备停止自动备份调度器...')
     
     try:
         if _scheduler_task and not _scheduler_task.done():
@@ -141,15 +147,15 @@ async def stop_backup_scheduler():
                 await _scheduler_task
             except asyncio.CancelledError:
                 pass
-            print('🛑 自动备份调度器已停止')
+            logger.info('🛑 自动备份调度器已停止')
         else:
-            print('🛑 自动备份调度器未在运行')
+            logger.info('🛑 自动备份调度器未在运行')
             
         _scheduler_running = False
         _scheduler_task = None
         
     except Exception as e:
-        print(f'❌ 停止自动备份调度器失败: {str(e)}')
+        logger.error(f'❌ 停止自动备份调度器失败: {str(e)}', exc_info=True)
 
 
 auto_backup = on_command('auto_backup')

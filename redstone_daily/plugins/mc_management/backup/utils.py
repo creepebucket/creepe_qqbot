@@ -561,29 +561,68 @@ class AutoBackupManager:
 
     async def check_players_online(self, server_name: str) -> int:
         """检查服务器在线玩家数量"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             instance_id = get_instance_id(server_name)
+            print(f'{server_name}: 正在检查玩家在线状态，实例ID: {instance_id}')
+            
             result = applications.get_info(MCSM_CONFIG['url'], instance_id, MCSM_CONFIG['daemon_id'], MCSM_CONFIG['apikey'])
+            print(f'{server_name}: MCSM API响应: {result}')
 
             if result.get('status') == 200:
                 data = result['data']
+                print(f'{server_name}: 服务器状态: {data.get("status")}, 详细信息: {data.get("info", {})}')
+                
                 if data['status'] == 3:  # 运行中
                     if 'info' in data:
-                        return data['info'].get('currentPlayers', 0)
+                        players = data['info'].get('currentPlayers', 0)
+                        print(f'{server_name}: 检测到 {players} 个玩家在线')
+                        print(f'{server_name}: 检测到 {players} 个玩家在线')
+                        return players
+                    else:
+                        print(f'{server_name}: 服务器运行中但缺少info字段')
+                        print(f'{server_name}: 服务器运行中但缺少info字段')
+                else:
+                    print(f'{server_name}: 服务器未运行 (状态: {data.get("status")})')
+                    print(f'{server_name}: 服务器未运行 (状态: {data.get("status")})')
+            else:
+                print(f'{server_name}: MCSM API调用失败，状态码: {result.get("status")}')
+                print(f'{server_name}: MCSM API调用失败，状态码: {result.get("status")}')
+            
+            print(f'{server_name}: 返回0个玩家在线')
+            print(f'{server_name}: 返回0个玩家在线')
             return 0
-        except Exception:
+        except Exception as e:
+            print(f'{server_name}: 检查玩家在线状态时出错: {str(e)}')
             return 0
 
     async def silent_backup(self, server_name: str) -> tuple[bool, str]:
         """静默备份（不发送QQ消息）"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            print(f'{server_name}: 开始静默备份流程')
+            print(f'{server_name}: 开始静默备份流程')
+            
             # 检查玩家在线状态
             players_online = await self.check_players_online(server_name)
+            print(f'{server_name}: 玩家检查完成，在线玩家数: {players_online}')
+            print(f'{server_name}: 玩家检查完成，在线玩家数: {players_online}')
+            
             if players_online == 0:
+                print(f'{server_name}: 没有玩家在线，跳过备份')
+                print(f'{server_name}: 没有玩家在线，跳过备份')
                 return True, f'服务器 {server_name} 没有玩家在线，跳过备份'
 
+            print(f'{server_name}: 有 {players_online} 个玩家在线，开始执行备份')
+            print(f'{server_name}: 有 {players_online} 个玩家在线，开始执行备份')
+            
             # 执行备份
             success, message = await execute_git_backup(server_name, f'定时备份 (在线玩家: {players_online})')
+            print(f'{server_name}: 备份执行完成，结果: {"成功" if success else "失败"}, 消息: {message}')
 
             # 更新最后备份时间
             if success:
@@ -595,7 +634,9 @@ class AutoBackupManager:
                 next_backup = datetime.now() + timedelta(minutes=config['interval_minutes'])
                 config['next_backup'] = next_backup.isoformat()
                 self.set_server_config(server_name, config)
+                print(f'{server_name}: 备份时间已更新，下次备份: {next_backup.strftime("%Y-%m-%d %H:%M:%S")}')
 
             return success, message
         except Exception as e:
+            print(f'{server_name}: 定时备份出错: {str(e)}')
             return False, f'定时备份出错: {str(e)}'
