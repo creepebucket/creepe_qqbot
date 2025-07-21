@@ -777,8 +777,9 @@ async def diagnose_git_repository(backup_path: str, server_name: str, progress_c
                 else:
                     await send_progress(f'🔍 已启用详细模式，继续深度检测...')
             
-            # 如果文件太多，使用批量检测策略
-            if len(all_files) > 500 and detailed_mode:  # 只在详细模式下才使用批量检测
+            # 在详细模式下，不使用批量检测，直接进行逐个文件检测
+            # 如果文件太多且不是详细模式，才使用批量检测策略
+            if len(all_files) > 500 and not detailed_mode:
                 await send_progress(f'⚡ 文件数量较多 ({len(all_files)} 个)，使用快速批量检测模式')
                 return await _fast_batch_diagnose(all_files, problematic_files, diagnostic_report, send_progress)
 
@@ -797,11 +798,14 @@ async def diagnose_git_repository(backup_path: str, server_name: str, progress_c
             check_count = 0
             failed_count = 0
             
+            # 先重置git状态确保干净的环境
+            subprocess.run(['git', 'reset'], capture_output=True)
+            
             for file_path in all_files:
                 check_count += 1
                 
-                # 每检查10个文件发送一次进度
-                if check_count % 10 == 0:
+                # 每检查50个文件发送一次进度
+                if check_count % 50 == 0:
                     await send_progress(f'📊 检查进度: {check_count}/{len(all_files)} (发现问题: {failed_count})')
                 
                 try:
@@ -813,62 +817,52 @@ async def diagnose_git_repository(backup_path: str, server_name: str, progress_c
                             'type': 'missing'
                         })
                         failed_count += 1
+                        await send_progress(f'❌ 文件不存在: {file_path}')
                         continue
 
-                    # 检查文件大小，跳过超大文件的详细检测
+                    # 检查文件大小，跳过超大文件的详细检测  
                     try:
                         file_size = os.path.getsize(file_path)
-                        if file_size > 100 * 1024 * 1024:  # 100MB
-                            await send_progress(f'⚠️ 跳过大文件检测: {file_path} ({file_size // 1024 // 1024}MB)')
+                        if file_size > 500 * 1024 * 1024:  # 500MB，提高阈值
+                            await send_progress(f'⚠️ 跳过超大文件: {file_path} ({file_size // 1024 // 1024}MB)')
                             continue
                     except:
                         pass
 
-                    # 尝试添加单个文件
-                    result = subprocess.run(['git', 'add', file_path], capture_output=True, text=True, timeout=5)
+                    # 尝试添加单个文件到git
+                    result = subprocess.run(['git', 'add', file_path], capture_output=True, text=True, timeout=10)
                     
                     if result.returncode != 0:
                         error_msg = result.stderr.strip() if result.stderr else '未知添加错误'
+                        
+                        # 检查是否是"不稳定对象源数据"错误
+                        is_corrupt = ('不稳定对象源数据' in error_msg or 
+                                     'malformed object' in error_msg.lower() or
+                                     'corrupt' in error_msg.lower() or
+                                     'bad file' in error_msg.lower())
+                        
                         problematic_files.append({
                             'path': file_path,
                             'error': error_msg,
-                            'type': 'add_error'
+                            'type': 'corrupt_object' if is_corrupt else 'add_error'
                         })
-                        await send_progress(f'❌ 文件添加失败: {file_path}')
+                        
+                        if is_corrupt:
+                            await send_progress(f'💀 发现损坏文件: {file_path}')
+                        else:
+                            await send_progress(f'❌ 文件添加失败: {file_path}')
+                        
                         failed_count += 1
                         
                         # 重置暂存区，继续检查其他文件
                         subprocess.run(['git', 'reset'], capture_output=True)
                         continue
-
-                    # 简化检测：只在前50个文件中进行深度检测
-                    if check_count <= 50:
-                        # 尝试创建一个测试提交
-                        test_commit_result = subprocess.run(
-                            ['git', 'commit', '--dry-run', '-m', 'test'], 
-                            capture_output=True, 
-                            text=True,
-                            timeout=5
-                        )
-                        
-                        # 检查是否出现对象源数据错误
-                        if ('不稳定对象源数据' in test_commit_result.stderr or 
-                            'malformed object' in test_commit_result.stderr.lower() or
-                            'corrupt' in test_commit_result.stderr.lower()):
-                            
-                            problematic_files.append({
-                                'path': file_path,
-                                'error': '不稳定对象源数据错误',
-                                'type': 'corrupt_object'
-                            })
-                            await send_progress(f'💀 发现损坏文件: {file_path}')
-                            failed_count += 1
-                            
-                            # 从暂存区移除这个文件
-                            subprocess.run(['git', 'reset', 'HEAD', file_path], capture_output=True)
+                    else:
+                        # 添加成功，重置暂存区以检查下一个文件
+                        subprocess.run(['git', 'reset'], capture_output=True)
 
                     # 让出控制权，避免阻塞
-                    if check_count % 20 == 0:
+                    if check_count % 100 == 0:
                         await asyncio.sleep(0.1)
 
                 except subprocess.TimeoutExpired:
