@@ -663,13 +663,13 @@ async def diagnose_git_repository(backup_path: str, server_name: str, progress_c
     diagnostic_report = []
 
     async def send_progress(message):
+        print(f"[诊断进度] {message}")
 
         return  # 太刷屏了, 看日志就够
 
         """发送进度消息"""
         if progress_callback:
             await progress_callback(message)
-        print(f"[诊断进度] {message}")
 
     try:
         # 切换到备份目录
