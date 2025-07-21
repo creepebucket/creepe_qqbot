@@ -664,7 +664,7 @@ async def diagnose_git_repository(backup_path: str, server_name: str, progress_c
 
     async def send_progress(message):
 
-        pass  # 太刷屏了, 看日志就够
+        return  # 太刷屏了, 看日志就够
 
         """发送进度消息"""
         if progress_callback:
