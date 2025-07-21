@@ -1,4 +1,5 @@
 import os
+import time
 
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Event
@@ -554,3 +555,222 @@ async def handle_backup_clean(event: Event):
         import logging
         logging.error(f'清理备份仓库 {server_name} 时出错: {str(e)}', exc_info=True)
         await backup_clean.send(f'❌ 清理过程中发生未知错误，请查看日志或联系管理员')
+
+# 添加用于存储诊断结果的临时状态
+_diagnostic_sessions = {}
+
+backup_diagnose = on_command('backup_diagnose')
+
+
+@backup_diagnose.handle()
+@check_command_enabled('backup_diagnose')
+async def handle_backup_diagnose(event: Event):
+    """诊断Git备份仓库问题"""
+    user, args, group = get_context(event)
+
+    # 检查MCSM配置
+    if not check_mcsm_config():
+        await backup_diagnose.send('❌ MCSM配置不完整，请检查环境变量配置')
+        return
+
+    # 检查Git备份配置
+    if not check_git_backup_config():
+        await backup_diagnose.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+
+    # 参数验证
+    if not args:
+        available_servers = ', '.join(SERVER_INSTANCES.keys())
+        await backup_diagnose.send(f'❌ 请指定服务器名\n用法: /backup_diagnose <服务器名>\n可用服务器: {available_servers}')
+        return
+
+    server_name = args[0]
+
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await backup_diagnose.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+
+    # 验证服务器名是否存在
+    try:
+        get_instance_id(server_name)
+    except ValueError as e:
+        await backup_diagnose.send(f'❌ {str(e)}')
+        return
+
+    # 验证备份路径配置
+    try:
+        backup_path = get_server_backup_path(server_name)
+    except ValueError as e:
+        await backup_diagnose.send(f'❌ {str(e)}')
+        return
+
+    # 检查备份目录是否存在
+    if not os.path.exists(backup_path):
+        await backup_diagnose.send(f'❌ 备份目录不存在: {backup_path}')
+        return
+
+    # 检查是否为Git仓库
+    git_path = os.path.join(backup_path, '.git')
+    if not os.path.exists(git_path):
+        await backup_diagnose.send(f'❌ 服务器 {server_name} 不是Git备份仓库')
+        return
+
+    # 发送开始诊断的消息
+    await backup_diagnose.send(f'🔍 开始诊断服务器 {server_name} 的Git仓库问题...\n⏳ 这可能需要一些时间，请耐心等待')
+
+    try:
+        # 导入诊断函数
+        from redstone_daily.plugins.mc_management.backup.utils import diagnose_git_repository
+
+        # 执行诊断
+        has_problems, diagnostic_report, problematic_files = await diagnose_git_repository(backup_path, server_name)
+
+        # 发送诊断报告
+        await backup_diagnose.send(diagnostic_report)
+
+        if has_problems and problematic_files:
+            # 保存诊断结果到会话状态
+            session_key = f"{user.id}_{group.id if group else 'private'}_{server_name}"
+            _diagnostic_sessions[session_key] = {
+                'server_name': server_name,
+                'backup_path': backup_path,
+                'problematic_files': problematic_files,
+                'timestamp': time.time()
+            }
+
+            # 询问用户如何处理
+            await backup_diagnose.send(
+                f'🚨 发现 {len(problematic_files)} 个问题文件！\n\n'
+                f'📋 修复选项:\n'
+                f'• /backup_fix {server_name} delete - 直接删除问题文件\n'
+                f'• /backup_fix {server_name} backup - 备份后删除问题文件\n'
+                f'• /backup_fix {server_name} skip - 跳过修复，保留问题文件\n\n'
+                f'⚠️ 建议选择 "backup" 选项以保留文件副本'
+            )
+        else:
+            await backup_diagnose.send('✅ Git仓库检查完成，未发现明显问题')
+
+    except Exception as e:
+        import logging
+        logging.error(f'诊断Git仓库 {server_name} 时出错: {str(e)}', exc_info=True)
+        await backup_diagnose.send(f'❌ 诊断过程中发生未知错误，请查看日志或联系管理员')
+
+
+backup_fix = on_command('backup_fix')
+
+
+@backup_fix.handle()
+@check_command_enabled('backup_fix')
+async def handle_backup_fix(event: Event):
+    """修复Git备份仓库问题"""
+    user, args, group = get_context(event)
+
+    # 检查MCSM配置
+    if not check_mcsm_config():
+        await backup_fix.send('❌ MCSM配置不完整，请检查环境变量配置')
+        return
+
+    # 检查Git备份配置
+    if not check_git_backup_config():
+        await backup_fix.send('❌ Git备份功能未启用或配置不完整\n请检查环境变量: GIT_BACKUP_ENABLED, GIT_BACKUP_PATHS')
+        return
+
+    # 参数验证
+    if len(args) < 2:
+        await backup_fix.send(
+            f'❌ 参数不足\n'
+            f'用法: /backup_fix <服务器名> <操作>\n'
+            f'操作选项:\n'
+            f'• delete - 直接删除问题文件\n'
+            f'• backup - 备份后删除问题文件\n'
+            f'• skip - 跳过修复，保留问题文件'
+        )
+        return
+
+    server_name = args[0]
+    action = args[1].lower()
+
+    # 验证操作参数
+    valid_actions = ['delete', 'backup', 'backup_and_delete', 'skip']
+    if action not in valid_actions:
+        await backup_fix.send(f'❌ 无效操作: {action}\n有效操作: {", ".join(valid_actions)}')
+        return
+
+    # 将backup映射为backup_and_delete
+    if action == 'backup':
+        action = 'backup_and_delete'
+
+    # 检查用户是否有该服务器的特殊权限
+    if not await check_server_permission_async(user, server_name, group):
+        await backup_fix.send(f'❌ 权限不足，需要 "{server_name}" 服务器权限')
+        return
+
+    # 检查是否有对应的诊断会话
+    session_key = f"{user.id}_{group.id if group else 'private'}_{server_name}"
+    if session_key not in _diagnostic_sessions:
+        await backup_fix.send(
+            f'❌ 没有找到服务器 {server_name} 的诊断结果\n'
+            f'请先运行: /backup_diagnose {server_name}'
+        )
+        return
+
+    session_data = _diagnostic_sessions[session_key]
+    
+    # 检查会话是否过期（30分钟）
+    if time.time() - session_data['timestamp'] > 1800:
+        del _diagnostic_sessions[session_key]
+        await backup_fix.send(
+            f'❌ 诊断结果已过期，请重新运行诊断\n'
+            f'命令: /backup_diagnose {server_name}'
+        )
+        return
+
+    backup_path = session_data['backup_path']
+    problematic_files = session_data['problematic_files']
+
+    # 发送开始修复的消息
+    action_text = {
+        'delete': '直接删除问题文件',
+        'backup_and_delete': '备份并删除问题文件',
+        'skip': '跳过修复'
+    }
+    
+    await backup_fix.send(f'🔧 开始修复服务器 {server_name}...\n📋 操作: {action_text[action]}')
+
+    try:
+        # 导入修复函数
+        from redstone_daily.plugins.mc_management.backup.utils import fix_git_repository
+
+        # 执行修复
+        success, fix_report = await fix_git_repository(backup_path, server_name, problematic_files, action)
+
+        # 发送修复报告
+        await backup_fix.send(fix_report)
+
+        if success:
+            # 清除诊断会话
+            del _diagnostic_sessions[session_key]
+            
+            if action != 'skip':
+                await backup_fix.send('✅ 修复完成！现在可以尝试重新执行备份操作')
+        else:
+            await backup_fix.send('❌ 修复过程中出现问题，请检查报告并手动处理')
+
+    except Exception as e:
+        import logging
+        logging.error(f'修复Git仓库 {server_name} 时出错: {str(e)}', exc_info=True)
+        await backup_fix.send(f'❌ 修复过程中发生未知错误，请查看日志或联系管理员')
+
+
+# 清理过期的诊断会话（可以在启动时或定期调用）
+def cleanup_expired_diagnostic_sessions():
+    """清理过期的诊断会话"""
+    current_time = time.time()
+    expired_keys = [
+        key for key, session in _diagnostic_sessions.items()
+        if current_time - session['timestamp'] > 1800  # 30分钟过期
+    ]
+    
+    for key in expired_keys:
+        del _diagnostic_sessions[key]

@@ -29,4 +29,6 @@ add_info('backup_rollback', '回滚到指定备份版本\n需要对应服务器�
 add_info('auto_backup', '管理定时自动备份\n需要对应服务器特殊权限\n用法: /auto_backup <on/off/status> [服务器名] [间隔分钟]')
 add_info('backup_analyze', '分析备份仓库大小和增长趋势\n无需权限\n用法: /backup_analyze [服务器名]')
 add_info('backup_clean', '手动清理备份仓库Git历史\n需要对应服务器特殊权限\n用法: /backup_clean <服务器名>')
+add_info('backup_diagnose', '诊断Git备份仓库问题\n逐个检查文件找出损坏的文件\n需要对应服务器特殊权限\n用法: /backup_diagnose <服务器名>')
+add_info('backup_fix', '修复Git备份仓库问题\n删除或备份损坏的文件\n需要对应服务器特殊权限\n用法: /backup_fix <服务器名> <delete/backup/skip>')
 add_info('bind', '绑定此群消息到服务器')

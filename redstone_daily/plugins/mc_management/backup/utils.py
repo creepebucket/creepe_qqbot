@@ -640,3 +640,267 @@ class AutoBackupManager:
         except Exception as e:
             print(f'{server_name}: 定时备份出错: {str(e)}')
             return False, f'定时备份出错: {str(e)}'
+
+
+async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[bool, str, list]:
+    """
+    诊断Git仓库问题，找出导致"不稳定对象源数据"错误的文件
+
+    Args:
+        backup_path: 备份路径
+        server_name: 服务器名称
+
+    Returns:
+        tuple[bool, str, list]: (是否有问题, 诊断报告, 问题文件列表)
+    """
+    import subprocess
+    import os
+    from pathlib import Path
+
+    problematic_files = []
+    diagnostic_report = []
+
+    try:
+        # 切换到备份目录
+        original_cwd = os.getcwd()
+        os.chdir(backup_path)
+
+        try:
+            # 步骤1: 检查git仓库状态
+            diagnostic_report.append(f'🔍 开始诊断服务器 {server_name} 的Git仓库')
+            
+            # 检查git仓库完整性
+            try:
+                result = subprocess.run(['git', 'fsck', '--full'], capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    diagnostic_report.append(f'⚠️ Git仓库完整性检查失败:')
+                    if result.stderr:
+                        diagnostic_report.append(f'   {result.stderr.strip()}')
+                else:
+                    diagnostic_report.append(f'✅ Git仓库完整性检查通过')
+            except subprocess.TimeoutExpired:
+                diagnostic_report.append(f'⚠️ Git完整性检查超时，跳过')
+            except Exception as e:
+                diagnostic_report.append(f'⚠️ Git完整性检查失败: {str(e)}')
+
+            # 步骤2: 重置暂存区并逐个添加文件
+            diagnostic_report.append(f'🔄 重置Git暂存区')
+            subprocess.run(['git', 'reset'], capture_output=True)
+
+            # 获取所有文件
+            all_files = []
+            for root, dirs, files in os.walk('.'):
+                # 跳过.git目录
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # 转换为相对路径并标准化
+                    rel_path = os.path.relpath(file_path, '.')
+                    if not rel_path.startswith('.git') and rel_path != '.':
+                        all_files.append(rel_path)
+
+            diagnostic_report.append(f'📁 找到 {len(all_files)} 个文件需要检查')
+
+            # 步骤3: 逐个添加文件并检测问题
+            check_count = 0
+            for file_path in all_files:
+                check_count += 1
+                try:
+                    # 检查文件是否存在且可读
+                    if not os.path.exists(file_path):
+                        problematic_files.append({
+                            'path': file_path,
+                            'error': '文件不存在',
+                            'type': 'missing'
+                        })
+                        continue
+
+                    # 尝试添加单个文件
+                    result = subprocess.run(['git', 'add', file_path], capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode != 0:
+                        error_msg = result.stderr.strip() if result.stderr else '未知添加错误'
+                        problematic_files.append({
+                            'path': file_path,
+                            'error': error_msg,
+                            'type': 'add_error'
+                        })
+                        diagnostic_report.append(f'❌ 文件添加失败: {file_path} - {error_msg}')
+                        
+                        # 重置暂存区，继续检查其他文件
+                        subprocess.run(['git', 'reset'], capture_output=True)
+                        continue
+
+                    # 尝试创建一个测试提交
+                    test_commit_result = subprocess.run(
+                        ['git', 'commit', '--dry-run', '-m', 'test'], 
+                        capture_output=True, 
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    # 检查是否出现对象源数据错误
+                    if ('不稳定对象源数据' in test_commit_result.stderr or 
+                        'malformed object' in test_commit_result.stderr.lower() or
+                        'corrupt' in test_commit_result.stderr.lower()):
+                        
+                        problematic_files.append({
+                            'path': file_path,
+                            'error': '不稳定对象源数据错误',
+                            'type': 'corrupt_object'
+                        })
+                        diagnostic_report.append(f'💀 发现损坏文件: {file_path}')
+                        
+                        # 从暂存区移除这个文件
+                        subprocess.run(['git', 'reset', 'HEAD', file_path], capture_output=True)
+
+                    # 每检查50个文件报告进度
+                    if check_count % 50 == 0:
+                        diagnostic_report.append(f'📊 已检查 {check_count}/{len(all_files)} 个文件')
+
+                except subprocess.TimeoutExpired:
+                    problematic_files.append({
+                        'path': file_path,
+                        'error': 'Git操作超时',
+                        'type': 'timeout'
+                    })
+                    diagnostic_report.append(f'⏰ 文件检查超时: {file_path}')
+                    subprocess.run(['git', 'reset'], capture_output=True)
+                except Exception as e:
+                    problematic_files.append({
+                        'path': file_path,
+                        'error': str(e),
+                        'type': 'exception'
+                    })
+                    diagnostic_report.append(f'⚠️ 文件检查异常: {file_path} - {str(e)}')
+
+            # 步骤4: 生成诊断总结
+            diagnostic_report.append(f'\n📋 诊断完成:')
+            diagnostic_report.append(f'• 总文件数: {len(all_files)}')
+            diagnostic_report.append(f'• 问题文件数: {len(problematic_files)}')
+
+            if problematic_files:
+                diagnostic_report.append(f'\n🚨 发现问题文件:')
+                for file_info in problematic_files:
+                    diagnostic_report.append(f'• {file_info["path"]} - {file_info["error"]}')
+
+            return len(problematic_files) > 0, '\n'.join(diagnostic_report), problematic_files
+
+        finally:
+            # 恢复原工作目录
+            os.chdir(original_cwd)
+
+    except Exception as e:
+        error_msg = f'诊断过程出错: {str(e)}'
+        diagnostic_report.append(error_msg)
+        return True, '\n'.join(diagnostic_report), []
+
+
+async def fix_git_repository(backup_path: str, server_name: str, problematic_files: list, action: str) -> tuple[bool, str]:
+    """
+    修复Git仓库问题
+
+    Args:
+        backup_path: 备份路径
+        server_name: 服务器名称
+        problematic_files: 问题文件列表
+        action: 修复动作 ('delete', 'backup_and_delete', 'skip')
+
+    Returns:
+        tuple[bool, str]: (是否成功, 修复报告)
+    """
+    import subprocess
+    import os
+    import shutil
+    from datetime import datetime
+
+    fix_report = []
+
+    try:
+        # 切换到备份目录
+        original_cwd = os.getcwd()
+        os.chdir(backup_path)
+
+        try:
+            fix_report.append(f'🔧 开始修复服务器 {server_name} 的Git仓库')
+
+            if action == 'delete':
+                # 直接删除问题文件
+                deleted_count = 0
+                for file_info in problematic_files:
+                    file_path = file_info['path']
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            deleted_count += 1
+                            fix_report.append(f'🗑️ 已删除: {file_path}')
+                        else:
+                            fix_report.append(f'⚠️ 文件不存在，跳过: {file_path}')
+                    except Exception as e:
+                        fix_report.append(f'❌ 删除失败: {file_path} - {str(e)}')
+
+                fix_report.append(f'📊 删除了 {deleted_count} 个问题文件')
+
+            elif action == 'backup_and_delete':
+                # 备份后删除问题文件
+                current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup_dir = os.path.join(backup_path, f'corrupted_files_backup_{current_time}')
+                os.makedirs(backup_dir, exist_ok=True)
+
+                backed_up_count = 0
+                deleted_count = 0
+
+                for file_info in problematic_files:
+                    file_path = file_info['path']
+                    try:
+                        if os.path.exists(file_path):
+                            # 创建备份目录结构
+                            backup_file_path = os.path.join(backup_dir, file_path)
+                            backup_file_dir = os.path.dirname(backup_file_path)
+                            os.makedirs(backup_file_dir, exist_ok=True)
+
+                            # 复制文件到备份目录
+                            shutil.copy2(file_path, backup_file_path)
+                            backed_up_count += 1
+
+                            # 删除原文件
+                            os.remove(file_path)
+                            deleted_count += 1
+                            fix_report.append(f'📦 已备份并删除: {file_path}')
+                        else:
+                            fix_report.append(f'⚠️ 文件不存在，跳过: {file_path}')
+                    except Exception as e:
+                        fix_report.append(f'❌ 备份删除失败: {file_path} - {str(e)}')
+
+                fix_report.append(f'📊 备份了 {backed_up_count} 个文件，删除了 {deleted_count} 个问题文件')
+                fix_report.append(f'📁 备份位置: {backup_dir}')
+
+            elif action == 'skip':
+                fix_report.append(f'⏭️ 跳过修复，保留所有问题文件')
+                return True, '\n'.join(fix_report)
+
+            # 步骤2: 重新初始化Git暂存区
+            fix_report.append(f'🔄 重新添加有效文件到Git')
+            subprocess.run(['git', 'reset'], capture_output=True)
+
+            # 添加所有剩余文件
+            subprocess.run(['git', 'add', '.'], capture_output=True)
+
+            # 检查是否还有问题
+            status_result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
+            if status_result.stdout.strip():
+                fix_report.append(f'✅ Git仓库已修复，可以正常添加文件')
+            else:
+                fix_report.append(f'ℹ️ 没有文件需要添加到Git')
+
+            return True, '\n'.join(fix_report)
+
+        finally:
+            # 恢复原工作目录
+            os.chdir(original_cwd)
+
+    except Exception as e:
+        error_msg = f'修复过程出错: {str(e)}'
+        fix_report.append(error_msg)
+        return False, '\n'.join(fix_report)
