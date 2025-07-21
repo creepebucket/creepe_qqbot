@@ -581,10 +581,11 @@ async def handle_backup_diagnose(event: Event):
     # 参数验证
     if not args:
         available_servers = ', '.join(SERVER_INSTANCES.keys())
-        await backup_diagnose.send(f'❌ 请指定服务器名\n用法: /backup_diagnose <服务器名>\n可用服务器: {available_servers}')
+        await backup_diagnose.send(f'❌ 请指定服务器名\n用法: /backup_diagnose <服务器名> [--detailed]\n可用服务器: {available_servers}')
         return
 
     server_name = args[0]
+    detailed_mode = '--detailed' in args or 'detailed' in args
 
     # 检查用户是否有该服务器的特殊权限
     if not await check_server_permission_async(user, server_name, group):
@@ -623,8 +624,14 @@ async def handle_backup_diagnose(event: Event):
         # 导入诊断函数
         from redstone_daily.plugins.mc_management.backup.utils import diagnose_git_repository
 
-        # 执行诊断
-        has_problems, diagnostic_report, problematic_files = await diagnose_git_repository(backup_path, server_name)
+        # 定义进度回调函数
+        async def progress_callback(message):
+            await backup_diagnose.send(message)
+
+        # 执行诊断，传入进度回调和详细模式
+        has_problems, diagnostic_report, problematic_files = await diagnose_git_repository(
+            backup_path, server_name, progress_callback, detailed_mode
+        )
 
         # 发送诊断报告
         await backup_diagnose.send(diagnostic_report)

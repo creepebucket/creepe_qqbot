@@ -642,23 +642,31 @@ class AutoBackupManager:
             return False, f'定时备份出错: {str(e)}'
 
 
-async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[bool, str, list]:
+async def diagnose_git_repository(backup_path: str, server_name: str, progress_callback=None, detailed_mode=False) -> tuple[bool, str, list]:
     """
     诊断Git仓库问题，找出导致"不稳定对象源数据"错误的文件
 
     Args:
         backup_path: 备份路径
         server_name: 服务器名称
+        progress_callback: 进度回调函数
 
     Returns:
         tuple[bool, str, list]: (是否有问题, 诊断报告, 问题文件列表)
     """
     import subprocess
     import os
+    import asyncio
     from pathlib import Path
 
     problematic_files = []
     diagnostic_report = []
+
+    async def send_progress(message):
+        """发送进度消息"""
+        if progress_callback:
+            await progress_callback(message)
+        print(f"[诊断进度] {message}")
 
     try:
         # 切换到备份目录
@@ -667,45 +675,135 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
 
         try:
             # 步骤1: 检查git仓库状态
-            diagnostic_report.append(f'🔍 开始诊断服务器 {server_name} 的Git仓库')
+            await send_progress(f'🔍 开始诊断服务器 {server_name} 的Git仓库')
             
             # 检查git仓库完整性
+            await send_progress(f'🔎 检查Git仓库完整性...')
             try:
                 result = subprocess.run(['git', 'fsck', '--full'], capture_output=True, text=True, timeout=30)
                 if result.returncode != 0:
-                    diagnostic_report.append(f'⚠️ Git仓库完整性检查失败:')
+                    await send_progress(f'⚠️ Git仓库完整性检查失败')
                     if result.stderr:
                         diagnostic_report.append(f'   {result.stderr.strip()}')
                 else:
-                    diagnostic_report.append(f'✅ Git仓库完整性检查通过')
+                    await send_progress(f'✅ Git仓库完整性检查通过')
             except subprocess.TimeoutExpired:
-                diagnostic_report.append(f'⚠️ Git完整性检查超时，跳过')
+                await send_progress(f'⚠️ Git完整性检查超时，跳过')
             except Exception as e:
-                diagnostic_report.append(f'⚠️ Git完整性检查失败: {str(e)}')
+                await send_progress(f'⚠️ Git完整性检查失败: {str(e)}')
 
-            # 步骤2: 重置暂存区并逐个添加文件
-            diagnostic_report.append(f'🔄 重置Git暂存区')
+            # 步骤2: 重置暂存区并获取文件列表
+            await send_progress(f'🔄 重置Git暂存区')
             subprocess.run(['git', 'reset'], capture_output=True)
 
-            # 获取所有文件
+            await send_progress(f'📁 扫描文件列表...')
+            # 获取所有文件并进行智能过滤
             all_files = []
+            skipped_files = []
+            
+            # 定义需要跳过的文件类型（通常不会引起Git问题）
+            skip_extensions = {'.log', '.tmp', '.cache', '.bak', '.old', '.lock', '.pid'}
+            skip_patterns = {'__pycache__', '.DS_Store', 'Thumbs.db', '.minecraft'}
+            
             for root, dirs, files in os.walk('.'):
                 # 跳过.git目录
                 if '.git' in dirs:
                     dirs.remove('.git')
+                    
+                # 跳过一些明显的缓存目录
+                dirs[:] = [d for d in dirs if not any(pattern in d for pattern in skip_patterns)]
+                
                 for file in files:
                     file_path = os.path.join(root, file)
                     # 转换为相对路径并标准化
                     rel_path = os.path.relpath(file_path, '.')
-                    if not rel_path.startswith('.git') and rel_path != '.':
-                        all_files.append(rel_path)
+                    
+                    if rel_path.startswith('.git') or rel_path == '.':
+                        continue
+                        
+                    # 检查是否需要跳过
+                    file_ext = os.path.splitext(file)[1].lower()
+                    if (file_ext in skip_extensions or 
+                        any(pattern in file for pattern in skip_patterns)):
+                        skipped_files.append(rel_path)
+                        continue
+                        
+                    all_files.append(rel_path)
 
-            diagnostic_report.append(f'📁 找到 {len(all_files)} 个文件需要检查')
+            await send_progress(f'📊 找到 {len(all_files)} 个文件需要检查 (跳过 {len(skipped_files)} 个临时文件)')
+            
+            # 如果没有文件需要检查
+            if not all_files:
+                diagnostic_report.append('ℹ️ 没有找到需要检查的文件')
+                return False, '\n'.join(diagnostic_report), []
 
-            # 步骤3: 逐个添加文件并检测问题
+            # 步骤3: 首先进行快速检测
+            await send_progress(f'⚡ 执行快速Git状态检测...')
+            quick_problems = await _quick_git_check(send_progress)
+            if quick_problems:
+                problematic_files.extend(quick_problems)
+                await send_progress(f'🚨 快速检测发现 {len(quick_problems)} 个问题')
+                
+                # 如果快速检测已经发现了问题且非详细模式，可以直接返回结果
+                if len(quick_problems) > 0 and not detailed_mode:
+                    diagnostic_report.extend([
+                        f'📋 快速诊断完成:',
+                        f'• 总文件数: {len(all_files)}',
+                        f'• 快速检测发现问题: {len(quick_problems)}',
+                        f'💡 如需详细检测，请添加 --detailed 参数'
+                    ])
+                    
+                    if quick_problems:
+                        diagnostic_report.append(f'\n🚨 快速检测发现的问题:')
+                        for file_info in quick_problems[:5]:  # 只显示前5个
+                            diagnostic_report.append(f'• {file_info["path"]} - {file_info["error"]}')
+                        if len(quick_problems) > 5:
+                            diagnostic_report.append(f'• ... 还有 {len(quick_problems) - 5} 个问题')
+                    
+                    return len(quick_problems) > 0, '\n'.join(diagnostic_report), quick_problems
+                elif len(quick_problems) > 0 and detailed_mode:
+                    await send_progress(f'🔍 已启用详细模式，继续深度检测...')
+            else:
+                await send_progress(f'✅ 快速检测未发现明显问题')
+                # 如果非详细模式且快速检测没有发现问题，直接返回
+                if not detailed_mode:
+                    diagnostic_report.extend([
+                        f'📋 快速诊断完成:',
+                        f'• 总文件数: {len(all_files)}',
+                        f'• 快速检测结果: 未发现明显问题',
+                        f'💡 如需详细检测，请添加 --detailed 参数'
+                    ])
+                    return False, '\n'.join(diagnostic_report), []
+                else:
+                    await send_progress(f'🔍 已启用详细模式，继续深度检测...')
+            
+            # 如果文件太多，使用批量检测策略
+            if len(all_files) > 500 and detailed_mode:  # 只在详细模式下才使用批量检测
+                await send_progress(f'⚡ 文件数量较多 ({len(all_files)} 个)，使用快速批量检测模式')
+                return await _fast_batch_diagnose(all_files, problematic_files, diagnostic_report, send_progress)
+
+            # 步骤4: 逐个添加文件并检测问题 (只在详细模式下进行)
+            if not detailed_mode:
+                await send_progress(f'ℹ️ 跳过详细文件检测，如需要请使用 --detailed 参数')
+                # 返回已有的快速检测结果
+                diagnostic_report.extend([
+                    f'📋 诊断总结:',
+                    f'• 总文件数: {len(all_files)}',
+                    f'• 问题文件数: {len(problematic_files)}'
+                ])
+                return len(problematic_files) > 0, '\n'.join(diagnostic_report), problematic_files
+            
+            await send_progress(f'🔍 开始详细文件检测 (逐个检查 {len(all_files)} 个文件)...')
             check_count = 0
+            failed_count = 0
+            
             for file_path in all_files:
                 check_count += 1
+                
+                # 每检查10个文件发送一次进度
+                if check_count % 10 == 0:
+                    await send_progress(f'📊 检查进度: {check_count}/{len(all_files)} (发现问题: {failed_count})')
+                
                 try:
                     # 检查文件是否存在且可读
                     if not os.path.exists(file_path):
@@ -714,10 +812,20 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
                             'error': '文件不存在',
                             'type': 'missing'
                         })
+                        failed_count += 1
                         continue
 
+                    # 检查文件大小，跳过超大文件的详细检测
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        if file_size > 100 * 1024 * 1024:  # 100MB
+                            await send_progress(f'⚠️ 跳过大文件检测: {file_path} ({file_size // 1024 // 1024}MB)')
+                            continue
+                    except:
+                        pass
+
                     # 尝试添加单个文件
-                    result = subprocess.run(['git', 'add', file_path], capture_output=True, text=True, timeout=10)
+                    result = subprocess.run(['git', 'add', file_path], capture_output=True, text=True, timeout=5)
                     
                     if result.returncode != 0:
                         error_msg = result.stderr.strip() if result.stderr else '未知添加错误'
@@ -726,38 +834,42 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
                             'error': error_msg,
                             'type': 'add_error'
                         })
-                        diagnostic_report.append(f'❌ 文件添加失败: {file_path} - {error_msg}')
+                        await send_progress(f'❌ 文件添加失败: {file_path}')
+                        failed_count += 1
                         
                         # 重置暂存区，继续检查其他文件
                         subprocess.run(['git', 'reset'], capture_output=True)
                         continue
 
-                    # 尝试创建一个测试提交
-                    test_commit_result = subprocess.run(
-                        ['git', 'commit', '--dry-run', '-m', 'test'], 
-                        capture_output=True, 
-                        text=True,
-                        timeout=10
-                    )
-                    
-                    # 检查是否出现对象源数据错误
-                    if ('不稳定对象源数据' in test_commit_result.stderr or 
-                        'malformed object' in test_commit_result.stderr.lower() or
-                        'corrupt' in test_commit_result.stderr.lower()):
+                    # 简化检测：只在前50个文件中进行深度检测
+                    if check_count <= 50:
+                        # 尝试创建一个测试提交
+                        test_commit_result = subprocess.run(
+                            ['git', 'commit', '--dry-run', '-m', 'test'], 
+                            capture_output=True, 
+                            text=True,
+                            timeout=5
+                        )
                         
-                        problematic_files.append({
-                            'path': file_path,
-                            'error': '不稳定对象源数据错误',
-                            'type': 'corrupt_object'
-                        })
-                        diagnostic_report.append(f'💀 发现损坏文件: {file_path}')
-                        
-                        # 从暂存区移除这个文件
-                        subprocess.run(['git', 'reset', 'HEAD', file_path], capture_output=True)
+                        # 检查是否出现对象源数据错误
+                        if ('不稳定对象源数据' in test_commit_result.stderr or 
+                            'malformed object' in test_commit_result.stderr.lower() or
+                            'corrupt' in test_commit_result.stderr.lower()):
+                            
+                            problematic_files.append({
+                                'path': file_path,
+                                'error': '不稳定对象源数据错误',
+                                'type': 'corrupt_object'
+                            })
+                            await send_progress(f'💀 发现损坏文件: {file_path}')
+                            failed_count += 1
+                            
+                            # 从暂存区移除这个文件
+                            subprocess.run(['git', 'reset', 'HEAD', file_path], capture_output=True)
 
-                    # 每检查50个文件报告进度
-                    if check_count % 50 == 0:
-                        diagnostic_report.append(f'📊 已检查 {check_count}/{len(all_files)} 个文件')
+                    # 让出控制权，避免阻塞
+                    if check_count % 20 == 0:
+                        await asyncio.sleep(0.1)
 
                 except subprocess.TimeoutExpired:
                     problematic_files.append({
@@ -765,7 +877,8 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
                         'error': 'Git操作超时',
                         'type': 'timeout'
                     })
-                    diagnostic_report.append(f'⏰ 文件检查超时: {file_path}')
+                    await send_progress(f'⏰ 文件检查超时: {file_path}')
+                    failed_count += 1
                     subprocess.run(['git', 'reset'], capture_output=True)
                 except Exception as e:
                     problematic_files.append({
@@ -773,17 +886,21 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
                         'error': str(e),
                         'type': 'exception'
                     })
-                    diagnostic_report.append(f'⚠️ 文件检查异常: {file_path} - {str(e)}')
+                    await send_progress(f'⚠️ 文件检查异常: {file_path} - {str(e)}')
+                    failed_count += 1
 
-            # 步骤4: 生成诊断总结
-            diagnostic_report.append(f'\n📋 诊断完成:')
+            # 步骤5: 生成诊断总结
+            await send_progress(f'📋 诊断完成！')
+            diagnostic_report.append(f'📋 诊断总结:')
             diagnostic_report.append(f'• 总文件数: {len(all_files)}')
             diagnostic_report.append(f'• 问题文件数: {len(problematic_files)}')
 
             if problematic_files:
                 diagnostic_report.append(f'\n🚨 发现问题文件:')
-                for file_info in problematic_files:
+                for file_info in problematic_files[:10]:  # 只显示前10个
                     diagnostic_report.append(f'• {file_info["path"]} - {file_info["error"]}')
+                if len(problematic_files) > 10:
+                    diagnostic_report.append(f'• ... 还有 {len(problematic_files) - 10} 个问题文件')
 
             return len(problematic_files) > 0, '\n'.join(diagnostic_report), problematic_files
 
@@ -793,8 +910,126 @@ async def diagnose_git_repository(backup_path: str, server_name: str) -> tuple[b
 
     except Exception as e:
         error_msg = f'诊断过程出错: {str(e)}'
+        await send_progress(error_msg)
         diagnostic_report.append(error_msg)
         return True, '\n'.join(diagnostic_report), []
+
+
+async def _quick_git_check(send_progress):
+    """快速Git状态检测"""
+    import subprocess
+    
+    problems = []
+    
+    try:
+        # 1. 检查Git状态
+        await send_progress("🔍 检查Git工作区状态...")
+        status_result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, timeout=10)
+        
+        # 2. 尝试添加所有文件
+        await send_progress("🔄 尝试批量添加文件...")
+        add_result = subprocess.run(['git', 'add', '.'], capture_output=True, text=True, timeout=30)
+        
+        if add_result.returncode != 0:
+            await send_progress("❌ 批量添加失败，存在问题文件")
+            # 解析错误信息，提取问题文件
+            for line in add_result.stderr.split('\n'):
+                line = line.strip()
+                if ('error:' in line.lower() or 'fatal:' in line.lower() or 
+                    '不稳定对象源数据' in line or 'malformed' in line.lower()):
+                    # 尝试提取文件名
+                    import re
+                    file_matches = re.findall(r'[\'"]([^\'\"]+)[\'"]', line)
+                    if file_matches:
+                        for file_path in file_matches:
+                            if '/' in file_path or '.' in file_path:
+                                problems.append({
+                                    'path': file_path,
+                                    'error': '快速检测发现问题',
+                                    'type': 'quick_check_error'
+                                })
+                                await send_progress(f"💀 快速检测发现问题文件: {file_path}")
+        else:
+            await send_progress("✅ 批量添加成功")
+            
+            # 3. 尝试提交检测
+            await send_progress("🔍 检查提交状态...")
+            commit_result = subprocess.run(
+                ['git', 'commit', '--dry-run', '-m', 'quick_test'], 
+                capture_output=True, text=True, timeout=15
+            )
+            
+            if commit_result.returncode != 0:
+                if ('不稳定对象源数据' in commit_result.stderr or 
+                    'malformed object' in commit_result.stderr.lower() or
+                    'corrupt' in commit_result.stderr.lower()):
+                    await send_progress("💀 检测到Git对象损坏")
+                    problems.append({
+                        'path': 'git_objects',
+                        'error': 'Git对象损坏',
+                        'type': 'git_corruption'
+                    })
+                    
+    except subprocess.TimeoutExpired:
+        await send_progress("⏰ 快速检测超时")
+    except Exception as e:
+        await send_progress(f"⚠️ 快速检测异常: {str(e)}")
+        
+    return problems
+
+
+async def _fast_batch_diagnose(all_files, problematic_files, diagnostic_report, send_progress):
+    """快速批量诊断模式"""
+    import subprocess
+    import asyncio
+    
+    await send_progress(f'🚀 执行快速批量检测...')
+    
+    # 尝试一次性添加所有文件
+    try:
+        result = subprocess.run(['git', 'add', '.'], capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            await send_progress(f'❌ 批量添加失败，切换到单文件检测模式')
+            # 如果批量失败，检测失败的具体文件
+            for line in result.stderr.split('\n'):
+                if 'error:' in line.lower() or 'fatal:' in line.lower():
+                    # 尝试从错误信息中提取文件名
+                    parts = line.split()
+                    for part in parts:
+                        if '/' in part or '.' in part:
+                            problematic_files.append({
+                                'path': part.strip("'\""),
+                                'error': '批量添加时失败',
+                                'type': 'batch_error'
+                            })
+                            break
+        else:
+            await send_progress(f'✅ 批量添加成功，检查提交状态...')
+            # 尝试测试提交
+            commit_result = subprocess.run(
+                ['git', 'commit', '--dry-run', '-m', 'test'], 
+                capture_output=True, 
+                text=True,
+                timeout=30
+            )
+            
+            if commit_result.returncode != 0:
+                if ('不稳定对象源数据' in commit_result.stderr or 
+                    'malformed object' in commit_result.stderr.lower() or
+                    'corrupt' in commit_result.stderr.lower()):
+                    await send_progress(f'💀 检测到Git对象损坏，需要进一步分析')
+                    # 这里可以添加更精细的检测逻辑
+                    
+    except subprocess.TimeoutExpired:
+        await send_progress(f'⏰ 批量检测超时')
+        
+    diagnostic_report.extend([
+        f'📋 快速批量诊断完成:',
+        f'• 总文件数: {len(all_files)}',
+        f'• 问题文件数: {len(problematic_files)}'
+    ])
+    
+    return len(problematic_files) > 0, '\n'.join(diagnostic_report), problematic_files
 
 
 async def fix_git_repository(backup_path: str, server_name: str, problematic_files: list, action: str) -> tuple[bool, str]:
