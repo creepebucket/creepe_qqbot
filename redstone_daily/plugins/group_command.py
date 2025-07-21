@@ -24,7 +24,8 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
         'server_start', 'server_stop', 'server_restart', 'server_kill'
     ],
     'mc备份': [
-        'server_backup', 'backup_info', 'backup_list', 'backup_rollback', 'auto_backup', 'backup_analyze', 'backup_clean'
+        'server_backup', 'backup_info', 'backup_list', 'backup_rollback', 'auto_backup', 'backup_analyze'
+        , 'backup_clean', 'backup_diagnose', 'backup_fix'
     ],
 }
 
