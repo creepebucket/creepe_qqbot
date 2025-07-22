@@ -115,8 +115,10 @@ async def check_server_messages():
                         player_name = chat_match.group(2)
                         message = chat_match.group(3)
 
+                        blacklist = ['Still Generating Crop Plugin Cache']
+
                         # 跳过QQ消息（避免循环）
-                        if message.startswith('qq['):
+                        if message.startswith('qq[') or message in blacklist:
                             continue
 
                         new_messages.append(f'服务器[{server_name}/{player_name}]: {message}标记标记qwertyuiop{time_str}')  #加个时间防止去重bug
