@@ -10,9 +10,10 @@ from redstone_daily.plugins.utils import check_command_enabled, get_context
 dice = on_message()
 add_info('dice', '掷骰子, 用法: /xxxdyyy, x为个数, y为面数')
 
-@check_command_enabled('dice')
+@check_command_enabled('dice', True)
 async def dice_handler(event: Event):
     message = event.get_message().extract_plain_text().strip()
+    print(message)
 
     if not re.match('^/[0-9]{1,3}d[0-9]{1,3}$'):
         return
