@@ -14,7 +14,7 @@ add_info('dice', '掷骰子, 用法: /xxxdyyy, x为个数, y为面数')
 async def dice_handler(event: Event):
     message = event.get_message().extract_plain_text().strip()
     print(message)
-    if not re.match('^/[0-9]{1,3}d[0-9]{1,3}$'):
+    if not re.match('^/[0-9]{1,3}d[0-9]{1,3}$', message):
         return
 
     args = message.replace('/', '').split('d')
