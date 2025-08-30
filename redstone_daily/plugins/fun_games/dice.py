@@ -21,7 +21,7 @@ async def dice_handler(event: Event):
     args = message.replace('/', '').split('d')
     answer = '['
 
-    for i in range(args[0]):
+    for i in range(int(args[0])):
         answer += f' {random.randint(1, args[2])} '
 
     await dice.send(f'{answer}]')
