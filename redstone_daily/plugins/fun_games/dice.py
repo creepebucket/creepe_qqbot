@@ -11,7 +11,7 @@ dice = on_message()
 add_info('dice', '掷骰子, 用法: /xxxdyyy, x为个数, y为面数')
 
 @dice.handle()
-@check_command_enabled('dice')
+@check_command_enabled('dice', False)
 async def dice_handler(event: Event):
     message = event.get_message().extract_plain_text().strip()
 
