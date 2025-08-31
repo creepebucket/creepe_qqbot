@@ -27,6 +27,12 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
         'server_backup', 'backup_info', 'backup_list', 'backup_rollback', 'auto_backup', 'backup_analyze'
         , 'backup_clean', 'backup_diagnose', 'backup_fix'
     ],
+    'NYATuringTest': [
+        # 通过开关控制自动聊天功能
+        'nyaturingtest_chat',
+        # 也可以根据需要把管理类命令纳入预设
+        'set_role', 'role', 'calm', 'reset', 'status', 'presets', 'set_preset'
+    ],
 }
 
 def _validate_group_id(event: MessageEvent, input_group: str | None = None) -> int:
