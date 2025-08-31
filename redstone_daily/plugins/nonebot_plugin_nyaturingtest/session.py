@@ -728,7 +728,7 @@ class Session:
             logger.debug(f"反馈阶段更新对话状态：{self.__chatting_state!s}")
             logger.debug("反馈阶段结束")
         except json.JSONDecodeError:
-            logger.warning("反馈阶段：LLM返回非JSON，跳过本轮反馈更新")
+            logger.warning(f"反馈阶段：LLM返回非JSON，跳过本轮反馈更新 {response}")
             return
         except KeyError as e:
             raise ValueError(f"Feedback stage missing key error: {e} in response: {response}")
