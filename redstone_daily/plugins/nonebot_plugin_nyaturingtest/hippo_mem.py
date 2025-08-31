@@ -127,6 +127,8 @@ class HippoMemory:
             return []
 
         doc_texts = [d.get("text", "") for d in docs if isinstance(d.get("text", None), str)]
+        # 过滤空白文本，避免嵌入接口 400
+        doc_texts = [t for t in doc_texts if t and t.strip()]
         if not doc_texts:
             self._docs = []
             self._cosine_similarity = 0.0
@@ -136,14 +138,16 @@ class HippoMemory:
         splited_queries = []
         for query in queries:
             splited_queries += _split_text_by_tokens(query, self._tokenizer, max_tokens=256, overlap=0)
+        # 过滤空白 query 片段
+        splited_queries = [q for q in splited_queries if q and q.strip()]
 
         # 向量化
         try:
             doc_vecs = np.array(await self._embedding_model.embed_documents(doc_texts))
-            if not splited_queries:
-                q_vecs = np.array(await self._embedding_model.embed_documents(queries))
-            else:
-                q_vecs = np.array(await self._embedding_model.embed_documents(splited_queries))
+            query_inputs = splited_queries if splited_queries else [q for q in queries if q and q.strip()]
+            if not query_inputs:
+                return []
+            q_vecs = np.array(await self._embedding_model.embed_documents(query_inputs))
         except Exception as e:
             logger.error(f"Embedding failed: {e}")
             return []

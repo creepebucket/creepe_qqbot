@@ -654,17 +654,27 @@ class Session:
             logger.debug(f"反馈阶段更新情感：{self.global_emotion}")
 
             # 更新情感倾向
-            if len(response_dict["emotion_tends"]) != len(messages_chunk):
-                raise ValueError(
-                    f"Feedback validation error: 'emotion_tends' array length "
-                    f"({len(response_dict['emotion_tends'])}) doesn't match "
-                    f"messages_chunk length ({len(messages_chunk)})"
+            emotion_tends_list = response_dict["emotion_tends"]
+            if not isinstance(emotion_tends_list, list):
+                raise ValueError("Feedback validation error: 'emotion_tends' is not a list: " + str(response_dict))
+            target_len = len(messages_chunk)
+            if len(emotion_tends_list) > target_len:
+                logger.warning(
+                    f"反馈阶段：emotion_tends 长度 {len(emotion_tends_list)} 多于消息数 {target_len}，将裁剪"
                 )
+                emotion_tends_list = emotion_tends_list[:target_len]
+            elif len(emotion_tends_list) < target_len:
+                logger.warning(
+                    f"反馈阶段：emotion_tends 长度 {len(emotion_tends_list)} 少于消息数 {target_len}，将补齐为中性值"
+                )
+                neutral = {"valence": 0.0, "arousal": 0.0, "dominance": 0.0}
+                while len(emotion_tends_list) < target_len:
+                    emotion_tends_list.append(neutral)
             for index, message in enumerate(messages_chunk):
                 if message.user_name not in self.profiles:
                     self.profiles[message.user_name] = PersonProfile(user_id=message.user_name)
                 self.profiles[message.user_name].push_interaction(
-                    Impression(timestamp=datetime.now(), delta=response_dict["emotion_tends"][index])
+                    Impression(timestamp=datetime.now(), delta=emotion_tends_list[index])
                 )
             # 更新对用户的情感
             for profile in self.profiles.values():
