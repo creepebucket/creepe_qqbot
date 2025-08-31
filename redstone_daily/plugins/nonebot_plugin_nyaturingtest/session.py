@@ -628,6 +628,9 @@ class Session:
         response = await llm(prompt)
         response = re.sub(r"^```json\s*|\s*```$", "", response)
         logger.debug(f"反馈阶段llm返回：{response}")
+        if not response:
+            logger.warning("反馈阶段：LLM返回为空，跳过本轮反馈更新")
+            return
         try:
             response_dict: dict[str, dict] = json.loads(response)
 
@@ -724,8 +727,9 @@ class Session:
 
             logger.debug(f"反馈阶段更新对话状态：{self.__chatting_state!s}")
             logger.debug("反馈阶段结束")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Feedback stage JSON parsing error: {e} in response: {response}")
+        except json.JSONDecodeError:
+            logger.warning("反馈阶段：LLM返回非JSON，跳过本轮反馈更新")
+            return
         except KeyError as e:
             raise ValueError(f"Feedback stage missing key error: {e} in response: {response}")
         except IndexError as e:
