@@ -1,8 +1,13 @@
 from dataclasses import asdict, dataclass, field
 import json
 import os
+from pathlib import Path
+from typing import Any
 
 from nonebot import logger
+from redstone_daily.plugins.utils.env_loader import get_env_str
+from redstone_daily.plugins.utils.database import get_database
+
 
 @dataclass
 class RolePreset:
@@ -45,24 +50,98 @@ _猫娘预设 = RolePreset(
 
 PRESETS: dict[str, RolePreset] = {}
 
+# 预设集合（MongoDB）
+presets_db = get_database('nyaturingtest_presets').collection
 
-def _load_presets_from_directory(directory: str = f"{store.get_plugin_config_dir()}/nya_presets"):
-    # 如果文件夹不存在就创建并且写入例子(_猫娘预设)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        with open(os.path.join(directory, "喵喵.json"), "w", encoding="utf-8") as f:
-            json.dump(asdict(_猫娘预设), f, ensure_ascii=False, indent=4)
-    for filename in os.listdir(directory):
-        if filename.endswith(".json"):
-            path = os.path.join(directory, filename)
+
+def _seed_from_env() -> None:
+    """
+    如果存在 NYATURINGTEST_PRESETS_JSON 则将其作为种子写入数据库。
+    格式支持：
+    - JSON 数组: [{ name, role, knowledges, hidden }, ...]
+    - JSON 对象: { "喵喵": { role, knowledges, hidden }, ... }
+    """
+    raw = get_env_str("NYATURINGTEST_PRESETS_JSON", "").strip()
+    if not raw:
+        return
+    try:
+        data: Any = json.loads(raw)
+        items: list[dict[str, Any]]
+        if isinstance(data, dict):
+            items = []
+            for name, cfg in data.items():
+                if isinstance(cfg, dict):
+                    cfg = cfg.copy()
+                    cfg.setdefault("name", name)
+                    items.append(cfg)
+        elif isinstance(data, list):
+            items = data
+        else:
+            logger.warning("NYATURINGTEST_PRESETS_JSON 必须是 JSON 对象或数组，已忽略")
+            return
+        for item in items:
             try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    preset = RolePreset(**data)
-                    PRESETS[filename] = preset
+                name = item.get("name")
+                role = item.get("role", "")
+                knowledges = item.get("knowledges", [])
+                knowledges_file = item.get("knowledges_file")
+                hidden = bool(item.get("hidden", False))
+                if not name:
+                    continue
+                presets_db.update_one(
+                    {"name": name},
+                    {
+                        "$set": {
+                            "name": name,
+                            "role": role,
+                            "knowledges": knowledges,
+                            "knowledges_file": knowledges_file,
+                            "hidden": hidden,
+                        }
+                    },
+                    upsert=True,
+                )
             except Exception as e:
-                logger.warning(f"无法加载预设 {filename}: {e}")
+                logger.warning(f"写入环境变量预设失败: {e}")
+    except Exception as e:
+        logger.warning(f"解析 NYATURINGTEST_PRESETS_JSON 失败: {e}")
 
 
-# 模块导入时自动加载外部预设
-_load_presets_from_directory()
+def _ensure_default_seed() -> None:
+    try:
+        count = presets_db.count_documents({})
+    except Exception:
+        count = 0
+    if count == 0:
+        try:
+            presets_db.insert_one(asdict(_猫娘预设))
+        except Exception as e:
+            logger.warning(f"写入默认预设失败: {e}")
+
+
+def _load_presets_from_db():
+    PRESETS.clear()
+    try:
+        cursor = presets_db.find({})
+        for doc in cursor:
+            try:
+                name = doc.get("name") or "unknown"
+                preset = RolePreset(
+                    name=name,
+                    role=doc.get("role", ""),
+                    knowledges=list(doc.get("knowledges", [])) if doc.get("knowledges") else [],
+                    knowledges_file=doc.get("knowledges_file"),
+                    hidden=bool(doc.get("hidden", False)),
+                )
+                # 为兼容旧的“文件名作为键”的约定，使用 name.json 作为键名
+                PRESETS[f"{name}.json"] = preset
+            except Exception as e:
+                logger.warning(f"载入预设文档失败: {e}")
+    except Exception as e:
+        logger.warning(f"读取数据库预设失败: {e}")
+
+
+# 模块导入时加载流程：先用环境变量种子（若有），再确保有默认种子，最后从DB加载
+_seed_from_env()
+_ensure_default_seed()
+_load_presets_from_db()
