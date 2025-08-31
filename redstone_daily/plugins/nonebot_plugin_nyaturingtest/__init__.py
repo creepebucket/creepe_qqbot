@@ -10,7 +10,7 @@ import traceback
 import anyio
 import nonebot
 import httpx
-from nonebot import logger, on_command, on_message, require
+from nonebot import logger, on_command, on_message
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import (
     Bot,
@@ -23,8 +23,6 @@ from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 from openai import AsyncOpenAI
-
-require("nonebot_plugin_localstore")
 
 from .client import LLMClient
 from .config import Config, plugin_config

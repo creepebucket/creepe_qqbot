@@ -12,7 +12,6 @@ import traceback
 
 import anyio
 from nonebot import logger
-import nonebot_plugin_localstore as store
 from openai import AsyncOpenAI
 
 from .client import LLMClient
@@ -182,8 +181,8 @@ class Session:
         获取会话文件路径
         """
         # 兼容旧实现：不再使用文件系统进行持久化
-        os.makedirs(f"{store.get_plugin_data_dir()}/yaturningtest_sessions", exist_ok=True)
-        return f"{store.get_plugin_data_dir()}/yaturningtest_sessions/session_{self.id}.json"
+        os.makedirs(f"{os.path.dirname(__file__)}/yaturningtest_sessions", exist_ok=True)
+        return f"{os.path.dirname(__file__)}/yaturningtest_sessions/session_{self.id}.json"
 
     def save_session(self):
         """

@@ -8,7 +8,6 @@ from datetime import datetime
 
 import anyio
 from nonebot import logger
-import nonebot_plugin_localstore as store
 import numpy as np
 from PIL import Image
 
@@ -16,7 +15,7 @@ from .config import plugin_config
 from .vlm import SiliconFlowVLM
 from redstone_daily.plugins.utils.database import get_database
 
-IMAGE_CACHE_DIR = Path(f"{store.get_plugin_cache_dir()}/image_cache")
+IMAGE_CACHE_DIR = Path(Path(__file__).parent / "_cache" / "image_cache")
 
 
 @dataclass
