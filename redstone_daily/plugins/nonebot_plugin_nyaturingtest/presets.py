@@ -3,8 +3,6 @@ import json
 import os
 
 from nonebot import logger
-import nonebot_plugin_localstore as store
-
 
 @dataclass
 class RolePreset:
