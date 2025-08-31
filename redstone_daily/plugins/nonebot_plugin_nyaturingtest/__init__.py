@@ -457,7 +457,7 @@ async def llm_response(client: LLMClient, message: str) -> str:
 
 
 @auto_chat.handle()
-@check_command_enabled("nyaturingtest_chat")
+@check_command_enabled("nyaturingtest_chat", False)
 async def handle_auto_chat(event: GroupMessageEvent):
     group_id = event.group_id
 
