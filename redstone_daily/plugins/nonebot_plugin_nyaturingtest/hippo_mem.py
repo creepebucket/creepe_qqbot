@@ -2,7 +2,6 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 import numpy as np
 from nonebot import logger
-from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from .siliconflow_embeddings import SiliconFlowEmbeddings
 from redstone_daily.plugins.utils.database import get_database
@@ -27,8 +26,8 @@ class HippoMemory:
         self._last_forget = datetime.now()
         # 缓存要索引的文本
         self._cache = ""
-        # 初始化分词器
-        self._tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3", trust_remote_code=True)
+        # 简易分词器占位（不使用外部模型）
+        self._tokenizer = None
         # 初始化嵌入模型，用于计算是否需要重新检索
         self._embedding_model = SiliconFlowEmbeddings(
             model="BAAI/bge-m3",
@@ -79,7 +78,7 @@ class HippoMemory:
         if not self._cache:
             logger.info("没有缓存的文本需要索引")
             return
-        texts = _split_text_by_tokens(self._cache, self._tokenizer, max_tokens=512, overlap=100)
+        texts = _split_text_by_tokens(self._cache, self._tokenizer, max_tokens=256, overlap=0)
         batches = _split_texts_by_byte_limit(texts, max_bytes=30_000)
         total = 0
         for batch in batches:
@@ -133,10 +132,10 @@ class HippoMemory:
             self._cosine_similarity = 0.0
             return []
 
-        # 处理查询切分
+        # 处理查询切分（每256字符）
         splited_queries = []
         for query in queries:
-            splited_queries += _split_text_by_tokens(query, self._tokenizer, max_tokens=8192, overlap=100)
+            splited_queries += _split_text_by_tokens(query, self._tokenizer, max_tokens=256, overlap=0)
 
         # 向量化
         try:
@@ -215,26 +214,26 @@ def _cosine(a, b) -> float:
     return np.dot(a, b) / (norm_a * norm_b)
 
 
-def _split_text_by_tokens(text: str, tokenizer, max_tokens=8192, overlap=100) -> list[str]:
+def _split_text_by_tokens(text: str, tokenizer, max_tokens=256, overlap=0) -> list[str]:
     """
-    按照指定的最大 token 数量和重叠数量将文本分割成多个块
+    使用固定长度按字符切分文本，支持重叠。
     Args:
         text: 要分割的文本
-        tokenizer: 用于分割文本的分词器
-        max_tokens: 每个块的最大 token 数量
-        overlap: 重叠的 token 数量
+        tokenizer: 保留参数（未使用）
+        max_tokens: 每段最大字符数（默认256）
+        overlap: 重叠字符数（默认0）
     Returns:
         分割后的文本块列表
     """
-    tokens = tokenizer.encode(text, add_special_tokens=False, truncation=True)
+    if max_tokens <= 0:
+        return [text]
     chunks = []
     start = 0
-    while start < len(tokens):
-        end = min(start + max_tokens, len(tokens))
-        chunk_tokens = tokens[start:end]
-        chunk_text = tokenizer.decode(chunk_tokens)
-        chunks.append(chunk_text)
-        start += max_tokens - overlap
+    step = max(1, max_tokens - max(0, overlap))
+    while start < len(text):
+        end = min(start + max_tokens, len(text))
+        chunks.append(text[start:end])
+        start += step
     return chunks
 
 
