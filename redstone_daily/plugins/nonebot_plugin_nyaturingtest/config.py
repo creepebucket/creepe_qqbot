@@ -16,9 +16,11 @@ class _EnvConfig:
         # OpenAI Chat API 配置
         self.nyaturingtest_chat_openai_api_key: str = get_env_str("NYATURINGTEST_CHAT_OPENAI_API_KEY", "")
         self.nyaturingtest_chat_openai_model: str = get_env_str("NYATURINGTEST_CHAT_OPENAI_MODEL", "gpt-3.5-turbo")
-        self.nyaturingtest_chat_openai_base_url: str = get_env_str(
-            "NYATURINGTEST_CHAT_OPENAI_BASE_URL", "https://api.openai.com/v1"
-        )
+        base = get_env_str("NYATURINGTEST_CHAT_OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+        base = base.rstrip("/")
+        if "/v1" not in base:
+            base = f"{base}/v1"
+        self.nyaturingtest_chat_openai_base_url: str = base
 
         # SiliconFlow API Key（用于嵌入/VLM等）
         self.nyaturingtest_siliconflow_api_key: str = get_env_str("NYATURINGTEST_SILICONFLOW_API_KEY", "")

@@ -38,10 +38,13 @@ class LLMClient:
         except Exception:
             content = None
 
-        if content:
-            return remove_leading_think(str(content))
-        else:
+        if not content:
             return None
+        text = str(content)
+        # 过滤返回HTML网页等非文本内容
+        if "<html" in text.lower() or "<!doctype html" in text.lower():
+            return None
+        return remove_leading_think(text)
 
 
 def remove_leading_think(text: str) -> str:
