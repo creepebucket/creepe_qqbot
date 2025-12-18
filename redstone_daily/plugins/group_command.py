@@ -18,6 +18,12 @@ COMMAND_PRESETS: Dict[str, List[str]] = {
     '娱乐': ['fish', '速算', '求解速算', 'dice'],
     '可能打扰聊天的功能': ['keyword'],
     '验证码': ['turing'],
+    '小工具': [
+        'count'
+    ],
+    '工具': [
+        'count'
+    ],
     'mc管理': [
         'whitelist', 'server_command', 'players', 'player_list',
         'mcsm_status', 'server_list', 'server_info', 'server_status',

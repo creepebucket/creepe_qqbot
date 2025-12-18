@@ -11,9 +11,10 @@ def add_info(name: str, desc: str):
     command_infos.append({'name': name, 'desc': desc})
 
 
-help_matcher = on_command('help')
+help_matcher = on_command('help', aliases={'帮助'})
 status_matcher = on_command('status')
 add_info('status', '查看服务器性能监控指标')
+add_info('help', '查看命令帮助与分页\n用法: /help [关键词] [页码]\n示例: /help 速算 2')
 
 
 @help_matcher.handle()
@@ -35,7 +36,11 @@ async def help_handler(event: Event):
         except ValueError:
             # 第一个参数是关键词
             keyword = args[0]
-            commands_to_show = [cmd for cmd in command_infos if keyword.lower() in cmd['name'].lower()]
+            kw = keyword.lower()
+            commands_to_show = [
+                cmd for cmd in command_infos
+                if kw in cmd['name'].lower() or kw in cmd['desc'].lower()
+            ]
             args = args[1:]
 
             # 尝试解析第二个参数为页码
